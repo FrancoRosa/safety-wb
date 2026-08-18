@@ -1,7 +1,7 @@
 {
-  "name": "YOLO26 Track",
-  "short_name": "YOLO26",
-  "description": "In-browser YOLO26 multi-object tracking demo",
+  "name": "SafetyTracker",
+  "short_name": "SafeTracker",
+  "description": "Multi-object tracking application",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#070b09",
