@@ -5,18 +5,93 @@
  */
 
 const COCO_CLASSES = [
-  "person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light",
-  "fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow",
-  "elephant","bear","zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee",
-  "skis","snowboard","sports ball","kite","baseball bat","baseball glove","skateboard","surfboard",
-  "tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl","banana","apple",
-  "sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake","chair","couch",
-  "potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard","cell phone",
-  "microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear",
-  "hair drier","toothbrush",
+  "person",
+  "bicycle",
+  "car",
+  "motorcycle",
+  "airplane",
+  "bus",
+  "train",
+  "truck",
+  "boat",
+  "traffic light",
+  "fire hydrant",
+  "stop sign",
+  "parking meter",
+  "bench",
+  "bird",
+  "cat",
+  "dog",
+  "horse",
+  "sheep",
+  "cow",
+  "elephant",
+  "bear",
+  "zebra",
+  "giraffe",
+  "backpack",
+  "umbrella",
+  "handbag",
+  "tie",
+  "suitcase",
+  "frisbee",
+  "skis",
+  "snowboard",
+  "sports ball",
+  "kite",
+  "baseball bat",
+  "baseball glove",
+  "skateboard",
+  "surfboard",
+  "tennis racket",
+  "bottle",
+  "wine glass",
+  "cup",
+  "fork",
+  "knife",
+  "spoon",
+  "bowl",
+  "banana",
+  "apple",
+  "sandwich",
+  "orange",
+  "broccoli",
+  "carrot",
+  "hot dog",
+  "pizza",
+  "donut",
+  "cake",
+  "chair",
+  "couch",
+  "potted plant",
+  "bed",
+  "dining table",
+  "toilet",
+  "tv",
+  "laptop",
+  "mouse",
+  "remote",
+  "keyboard",
+  "cell phone",
+  "microwave",
+  "oven",
+  "toaster",
+  "sink",
+  "refrigerator",
+  "book",
+  "clock",
+  "vase",
+  "scissors",
+  "teddy bear",
+  "hair drier",
+  "toothbrush",
 ];
 
 const IMG_SIZE = 640; // must match the imgsz used at export time
+const DEFAULT_MODEL_PATH = "./yolo26n.onnx";
+
+ort.env.wasm.wasmPaths = "./";
+ort.env.wasm.numThreads = 1;
 
 const els = {
   modelInput: document.getElementById("modelInput"),
@@ -26,6 +101,7 @@ const els = {
   videoInputWrap: document.getElementById("videoInputWrap"),
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
+  fullscreenBtn: document.getElementById("fullscreenBtn"),
   video: document.getElementById("video"),
   overlay: document.getElementById("overlay"),
   stage: document.getElementById("stage"),
@@ -71,43 +147,72 @@ function idColor(id) {
 // Model loading
 // ---------------------------------------------------------------------
 
-els.modelInput.addEventListener("change", async (e) => {
-  const file = e.target.files[0];
+async function loadModelFromBuffer(buf, label) {
+  const providers = ["webgpu", "wasm"];
+  let loaded = null;
+  let backendUsed = "";
+  for (const ep of providers) {
+    try {
+      loaded = await ort.InferenceSession.create(buf, {
+        executionProviders: [ep],
+        graphOptimizationLevel: "all",
+      });
+      backendUsed = ep;
+      break;
+    } catch (err) {
+      console.warn(`EP ${ep} failed, trying next`, err);
+    }
+  }
+  if (!loaded) throw new Error("No available execution provider");
+  session = loaded;
+  inputName = session.inputNames[0];
+  els.backendStat.textContent = backendUsed.toUpperCase();
+  els.modelStatus.textContent = `Loaded: ${label}`;
+  els.modelStatus.className = "status ok";
+  els.startBtn.disabled = false;
+  log(`Model ready — input "${inputName}", backend ${backendUsed}`);
+  window.setTimeout(() => maybeAutoStart(), 150);
+}
+
+async function loadModelFile(file) {
   if (!file) return;
   els.modelStatus.textContent = "Loading model…";
   els.modelStatus.className = "status pending";
   try {
     const buf = await file.arrayBuffer();
-    const providers = ["webgpu", "wasm"];
-    let loaded = null;
-    let backendUsed = "";
-    for (const ep of providers) {
-      try {
-        loaded = await ort.InferenceSession.create(buf, {
-          executionProviders: [ep],
-          graphOptimizationLevel: "all",
-        });
-        backendUsed = ep;
-        break;
-      } catch (err) {
-        console.warn(`EP ${ep} failed, trying next`, err);
-      }
-    }
-    if (!loaded) throw new Error("No available execution provider");
-    session = loaded;
-    inputName = session.inputNames[0];
-    els.backendStat.textContent = backendUsed.toUpperCase();
-    els.modelStatus.textContent = `Loaded: ${file.name}`;
-    els.modelStatus.className = "status ok";
-    els.startBtn.disabled = false;
-    log(`Model ready — input "${inputName}", backend ${backendUsed}`);
+    await loadModelFromBuffer(buf, file.name);
   } catch (err) {
     console.error(err);
     els.modelStatus.textContent = "Failed to load model — see console";
     els.modelStatus.className = "status err";
     log(`Model load failed: ${err.message}`);
   }
+}
+
+async function loadDefaultModel() {
+  els.modelStatus.textContent = "Loading default model…";
+  els.modelStatus.className = "status pending";
+  try {
+    const response = await fetch(DEFAULT_MODEL_PATH, { cache: "force-cache" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const buf = await response.arrayBuffer();
+    await loadModelFromBuffer(buf, "yolo26n.onnx");
+  } catch (err) {
+    console.error(err);
+    els.modelStatus.textContent =
+      "Default model could not load — choose a file manually";
+    els.modelStatus.className = "status err";
+    log(`Default model load failed: ${err.message}`);
+  }
+}
+
+els.modelInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  await loadModelFile(file);
 });
+
+loadDefaultModel();
 
 // ---------------------------------------------------------------------
 // Source handling (webcam vs local file)
@@ -116,6 +221,7 @@ els.modelInput.addEventListener("change", async (e) => {
 els.sourceSelect.addEventListener("change", () => {
   const isFile = els.sourceSelect.value === "file";
   els.videoInputWrap.classList.toggle("hidden", !isFile);
+  maybeAutoStart();
 });
 
 els.videoInput.addEventListener("change", (e) => {
@@ -124,6 +230,7 @@ els.videoInput.addEventListener("change", (e) => {
   els.video.srcObject = null;
   els.video.src = URL.createObjectURL(file);
   els.video.loop = true;
+  maybeAutoStart();
 });
 
 async function setupSource() {
@@ -184,7 +291,12 @@ function letterbox(video) {
     chw[plane + i] = data[o + 1] / 255; // G
     chw[2 * plane + i] = data[o + 2] / 255; // B
   }
-  return { tensor: new ort.Tensor("float32", chw, [1, 3, IMG_SIZE, IMG_SIZE]), scale, padX, padY };
+  return {
+    tensor: new ort.Tensor("float32", chw, [1, 3, IMG_SIZE, IMG_SIZE]),
+    scale,
+    padX,
+    padY,
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -272,7 +384,14 @@ async function frameLoop() {
     tracker.iouThresh = iouThresh;
     tracker.trackBuffer = Number(els.bufferSlider.value);
 
-    const dets = decode(output, scale, padX, padY, confThresh, els.classSelect.value);
+    const dets = decode(
+      output,
+      scale,
+      padX,
+      padY,
+      confThresh,
+      els.classSelect.value,
+    );
     const tracks = tracker.update(dets);
 
     for (const tr of tracks) maxSeenId = Math.max(maxSeenId, tr.id);
@@ -297,8 +416,8 @@ async function frameLoop() {
 // Start / stop
 // ---------------------------------------------------------------------
 
-els.startBtn.addEventListener("click", async () => {
-  if (!session) return;
+async function startTracking() {
+  if (!session || running) return;
   try {
     await setupSource();
   } catch (err) {
@@ -323,9 +442,9 @@ els.startBtn.addEventListener("click", async () => {
   log("Tracking started (persist=True equivalent — IDs carry across frames)");
   lastFrameTime = performance.now();
   frameLoop();
-});
+}
 
-els.stopBtn.addEventListener("click", () => {
+function stopTracking() {
   running = false;
   if (rafId) cancelAnimationFrame(rafId);
   const stream = els.video.srcObject;
@@ -335,7 +454,45 @@ els.stopBtn.addEventListener("click", () => {
   els.startBtn.disabled = false;
   els.stopBtn.disabled = true;
   log("Tracking stopped");
+}
+
+function maybeAutoStart() {
+  if (!session || running) return;
+  if (els.sourceSelect.value === "file" && !els.video.src) return;
+  window.setTimeout(() => startTracking(), 100);
+}
+
+els.startBtn.addEventListener("click", startTracking);
+els.stopBtn.addEventListener("click", stopTracking);
+
+window.addEventListener("load", () => {
+  window.setTimeout(() => maybeAutoStart(), 250);
 });
+
+els.fullscreenBtn.addEventListener("click", async () => {
+  try {
+    if (!document.fullscreenElement) {
+      await els.stage.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  } catch (err) {
+    log(`Fullscreen error: ${err.message}`);
+  }
+});
+
+document.addEventListener("fullscreenchange", () => {
+  const active = Boolean(document.fullscreenElement);
+  els.fullscreenBtn.textContent = active ? "Exit Fullscreen" : "Fullscreen";
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
+  });
+}
 
 // Populate class filter
 (function initClassSelect() {

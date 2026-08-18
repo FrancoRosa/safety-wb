@@ -34,6 +34,19 @@ html, body {
     radial-gradient(ellipse 700px 500px at 100% 0%, rgba(78,227,138,0.05), transparent 60%);
 }
 
+.fullscreen-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  flex: 0 0 auto;
+  min-width: 138px;
+  background: rgba(7, 11, 9, 0.7);
+  border-color: rgba(120, 255, 170, 0.4);
+  color: var(--text);
+  backdrop-filter: blur(4px);
+}
+
 /* faint CRT scanline texture over the whole page, very subtle */
 .scanlines {
   position: fixed;
@@ -352,7 +365,7 @@ select {
 .status.err { color: var(--red); }
 .status.err::before { background: var(--red); }
 
-.btn-row { display: flex; gap: 8px; margin-top: 4px; }
+.btn-row { display: none; gap: 8px; margin-top: 4px; }
 
 button {
   flex: 1;

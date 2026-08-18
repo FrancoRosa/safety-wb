@@ -1,140 +1,168 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>YOLO26 · Browser Tracking Console</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css" />
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b09" />
+    <title>Safety · Browser Tracking Console</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="scanlines" aria-hidden="true"></div>
 
-<div class="scanlines" aria-hidden="true"></div>
-
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">◎</span>
-    <div class="brand-text">
-      <h1>YOLO26 <span class="dim">/</span> TRACK</h1>
-      <p class="brand-sub">In-browser multi-object tracking · onnxruntime-web · <a href="https://docs.ultralytics.com/modes/track" target="_blank" rel="noopener">Ultralytics track mode</a>-style pipeline</p>
-    </div>
-  </div>
-  <div class="topbar-status">
-    <div class="pill"><span class="dot" id="backendDot"></span>BACKEND <b id="backendStat">—</b></div>
-  </div>
-</header>
-
-<main class="layout">
-
-  <!-- ============ STAGE ============ -->
-  <section class="stage-wrap">
-    <div class="stage" id="stage">
-      <video id="video" playsinline muted></video>
-      <canvas id="overlay"></canvas>
-      <div class="reticle tl"></div>
-      <div class="reticle tr"></div>
-      <div class="reticle bl"></div>
-      <div class="reticle br"></div>
-      <div class="live-badge"><span class="dot"></span>LIVE</div>
-      <div class="stage-empty">
-        <p>1 · Load a <code>yolo26n.onnx</code> model</p>
-        <p>2 · Choose webcam or a video file</p>
-        <p>3 · Press <b>Start Tracking</b></p>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◎</span>
+        <div class="brand-text">
+          <h1>Safety tracker</h1>
+        </div>
       </div>
-    </div>
-
-    <div class="telemetry-strip">
-      <div class="stat"><span class="stat-label">FPS</span><span class="stat-val" id="fpsStat">0.0</span></div>
-      <div class="stat"><span class="stat-label">DETECTIONS</span><span class="stat-val" id="detStat">0</span></div>
-      <div class="stat"><span class="stat-label">ACTIVE TRACKS</span><span class="stat-val" id="trackStat">0</span></div>
-      <div class="stat"><span class="stat-label">IDS ASSIGNED</span><span class="stat-val" id="totalStat">0</span></div>
-    </div>
-
-    <details class="setup-help">
-      <summary>Where do I get <code>yolo26n.onnx</code>?</summary>
-      <p>Ultralytics ships PyTorch weights, not a pre-built browser model — export one locally (~2 minutes), then upload it in the panel on the right. Nothing leaves your machine; inference runs entirely in this tab.</p>
-      <pre><code>pip install ultralytics
-yolo export model=yolo26n.pt format=onnx imgsz=640 opset=17 simplify=True</code></pre>
-      <p>This produces <code>yolo26n.onnx</code> with an end-to-end, NMS-free output of shape <code>(1, 300, 6)</code> — this demo's decoder expects exactly that layout. Larger checkpoints (<code>yolo26s/m/l/x.onnx</code>) work too, just slower per frame.</p>
-    </details>
-  </section>
-
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="panel">
-
-    <section class="panel-section">
-      <h2>01 · Model</h2>
-      <label class="file-btn">
-        <input type="file" id="modelInput" accept=".onnx" />
-        Choose yolo26n.onnx
-      </label>
-      <p class="status pending" id="modelStatus">No model loaded</p>
-    </section>
-
-    <section class="panel-section">
-      <h2>02 · Source</h2>
-      <select id="sourceSelect">
-        <option value="webcam">Webcam</option>
-        <option value="file">Video file</option>
-      </select>
-      <div class="file-btn-wrap hidden" id="videoInputWrap">
-        <label class="file-btn small">
-          <input type="file" id="videoInput" accept="video/*" />
-          Choose video file
-        </label>
+      <div class="topbar-status">
+        <div class="pill">
+          <span class="dot" id="backendDot"></span>BACKEND
+          <b id="backendStat">—</b>
+        </div>
       </div>
-      <div class="btn-row">
-        <button id="startBtn" disabled>Start Tracking</button>
-        <button id="stopBtn" class="secondary" disabled>Stop</button>
-      </div>
-    </section>
+    </header>
 
-    <section class="panel-section">
-      <h2>03 · Parameters</h2>
+    <main class="layout">
+      <!-- ============ STAGE ============ -->
+      <section class="stage-wrap">
+        <div class="stage" id="stage">
+          <button
+            id="fullscreenBtn"
+            class="fullscreen-btn"
+            type="button"
+            aria-label="Toggle fullscreen"
+          >
+            Fullscreen
+          </button>
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="reticle tl"></div>
+          <div class="reticle tr"></div>
+          <div class="reticle bl"></div>
+          <div class="reticle br"></div>
+          <div class="live-badge"><span class="dot"></span>LIVE</div>
+          <div class="stage-empty">
+            <p>1 · Default model: <code>yolo26n.onnx</code></p>
+            <p>2 · Webcam or video source is selected automatically</p>
+            <p>3 · Tracking starts without a manual button press</p>
+          </div>
+        </div>
 
-      <label class="field">
-        <span>Confidence threshold <b id="confVal">0.50</b></span>
-        <input type="range" id="confSlider" min="0.05" max="0.9" step="0.01" value="0.5" />
-      </label>
+        <div class="telemetry-strip">
+          <div class="stat">
+            <span class="stat-label">FPS</span
+            ><span class="stat-val" id="fpsStat">0.0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">DETECTIONS</span
+            ><span class="stat-val" id="detStat">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">ACTIVE TRACKS</span
+            ><span class="stat-val" id="trackStat">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">IDS ASSIGNED</span
+            ><span class="stat-val" id="totalStat">0</span>
+          </div>
+        </div>
+      </section>
 
-      <label class="field">
-        <span>Match IoU threshold <b id="iouVal">0.30</b></span>
-        <input type="range" id="iouSlider" min="0.1" max="0.9" step="0.01" value="0.3" />
-      </label>
+      <!-- ============ SIDEBAR ============ -->
+      <aside class="panel">
+        <section class="panel-section" style="display: none">
+          <h2>01 · Model</h2>
+          <label class="file-btn">
+            <input type="file" id="modelInput" accept=".onnx" />
+            Choose yolo26n.onnx
+          </label>
+          <p class="status pending" id="modelStatus">No model loaded</p>
+        </section>
 
-      <label class="field">
-        <span>Track buffer <b id="bufferVal">30f</b></span>
-        <input type="range" id="bufferSlider" min="5" max="90" step="1" value="30" />
-      </label>
+        <section class="panel-section">
+          <h2>01 · Source</h2>
+          <select id="sourceSelect">
+            <option value="webcam">Webcam</option>
+            <option value="file">Video file</option>
+          </select>
+          <div class="file-btn-wrap hidden" id="videoInputWrap">
+            <label class="file-btn small">
+              <input type="file" id="videoInput" accept="video/*" />
+              Choose video file
+            </label>
+          </div>
+          <div class="btn-row hidden">
+            <button id="startBtn" disabled>Start Tracking</button>
+            <button id="stopBtn" class="secondary" disabled>Stop</button>
+          </div>
+        </section>
 
-      <label class="field">
-        <span>Class filter</span>
-        <select id="classSelect"></select>
-      </label>
+        <section class="panel-section">
+          <h2>02 · Parameters</h2>
 
-      <label class="checkbox">
-        <input type="checkbox" id="trailToggle" checked />
-        Draw motion trails
-      </label>
-    </section>
+          <label class="field">
+            <span>Confidence threshold <b id="confVal">0.50</b></span>
+            <input
+              type="range"
+              id="confSlider"
+              min="0.05"
+              max="0.9"
+              step="0.01"
+              value="0.5"
+            />
+          </label>
 
-    <section class="panel-section grow">
-      <h2>04 · Event log</h2>
-      <pre class="log" id="log"></pre>
-    </section>
+          <label class="field">
+            <span>Match IoU threshold <b id="iouVal">0.30</b></span>
+            <input
+              type="range"
+              id="iouSlider"
+              min="0.1"
+              max="0.9"
+              step="0.01"
+              value="0.3"
+            />
+          </label>
 
-  </aside>
-</main>
+          <label class="field">
+            <span>Track buffer <b id="bufferVal">30f</b></span>
+            <input
+              type="range"
+              id="bufferSlider"
+              min="5"
+              max="90"
+              step="1"
+              value="30"
+            />
+          </label>
 
-<footer class="foot">
-  Runs entirely client-side via <a href="https://onnxruntime.ai/docs/tutorials/web/" target="_blank" rel="noopener">onnxruntime-web</a>. Tracking logic is a lightweight ByteTrack-style
-  association (<code>tracker.js</code>) — see <a href="https://docs.ultralytics.com/modes/track" target="_blank" rel="noopener">docs.ultralytics.com/modes/track</a> for the reference Python implementation and heavier trackers (BoT-SORT, ReID, camera-motion compensation).
-</footer>
+          <label class="field">
+            <span>Class filter</span>
+            <select id="classSelect"></select>
+          </label>
 
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
-<script src="tracker.js"></script>
-<script src="app.js"></script>
-</body>
+          <label class="checkbox">
+            <input type="checkbox" id="trailToggle" checked />
+            Draw motion trails
+          </label>
+        </section>
+
+        <section class="panel-section grow">
+          <h2>03 · Event log</h2>
+          <pre class="log" id="log"></pre>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="foot" style="text-align: center">All rights reserved</footer>
+
+    <script src="ort.min.js"></script>
+    <script src="tracker.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>
