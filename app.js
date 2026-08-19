@@ -121,6 +121,90 @@ const els = {
   log: document.getElementById("log"),
 };
 
+// Populate source select with available video devices (cameras)
+async function populateCameraOptions() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices)
+    return;
+  try {
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    let cams = devices.filter((d) => d.kind === "videoinput");
+
+    // If labels are empty (no permission yet) or no devices found, prompt for a short getUserMedia
+    const labelsMissing = cams.length > 0 ? cams.every((c) => !c.label) : false;
+    if (
+      (labelsMissing && cams.length > 0) ||
+      (cams.length === 0 && navigator.mediaDevices.getUserMedia)
+    ) {
+      let s = null;
+      try {
+        // Request a short-lived stream to trigger permission prompt and expose device labels
+        s = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      } catch (err) {
+        console.warn("Camera permission denied or no camera available:", err);
+      }
+      devices = await navigator.mediaDevices.enumerateDevices();
+      cams = devices.filter((d) => d.kind === "videoinput");
+      if (s) s.getTracks().forEach((t) => t.stop());
+    }
+
+    // Clear existing options and add camera entries
+    els.sourceSelect.innerHTML = "";
+    if (cams.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "webcam";
+      opt.textContent = "Webcam (no cameras found)";
+      els.sourceSelect.appendChild(opt);
+    } else {
+      cams.forEach((cam, i) => {
+        const opt = document.createElement("option");
+        // value encodes deviceId so we can open specific camera
+        opt.value = `camera:${cam.deviceId}`;
+        opt.textContent = cam.label || `Camera ${i + 1}`;
+        els.sourceSelect.appendChild(opt);
+      });
+    }
+
+    // Add video file option last
+    const fileOpt = document.createElement("option");
+    fileOpt.value = "file";
+    fileOpt.textContent = "Video file";
+    els.sourceSelect.appendChild(fileOpt);
+
+    // Restore preferred source if available, otherwise pick a sensible default
+    const preferred = localStorage.getItem("preferredSource");
+    const values = Array.from(els.sourceSelect.options).map((o) => o.value);
+    if (preferred && values.includes(preferred)) {
+      els.sourceSelect.value = preferred;
+    } else if (
+      preferred &&
+      preferred.startsWith("camera:") &&
+      cams.length > 0
+    ) {
+      // previously selected camera not present; fall back to first camera
+      els.sourceSelect.value = `camera:${cams[0].deviceId}`;
+    } else if (cams.length > 0) {
+      // default to first available camera
+      els.sourceSelect.value = `camera:${cams[0].deviceId}`;
+    } else {
+      const first = els.sourceSelect.options[0];
+      if (first) els.sourceSelect.value = first.value;
+    }
+    // Show/hide file chooser according to selection
+    els.videoInputWrap.classList.toggle(
+      "hidden",
+      els.sourceSelect.value !== "file",
+    );
+  } catch (err) {
+    console.warn("Failed to enumerate devices:", err);
+  }
+}
+
+// Kick off camera enumeration
+populateCameraOptions();
+
 let session = null;
 let tracker = null;
 let running = false;
@@ -218,10 +302,25 @@ loadDefaultModel();
 // Source handling (webcam vs local file)
 // ---------------------------------------------------------------------
 
-els.sourceSelect.addEventListener("change", () => {
-  const isFile = els.sourceSelect.value === "file";
+els.sourceSelect.addEventListener("change", async () => {
+  const val = els.sourceSelect.value;
+  localStorage.setItem("preferredSource", val);
+  const isFile = val === "file";
   els.videoInputWrap.classList.toggle("hidden", !isFile);
-  maybeAutoStart();
+
+  if (running) {
+    // If tracking is active, switch the video source on-the-fly
+    try {
+      await setupSource();
+      els.overlay.width = els.video.videoWidth || 960;
+      els.overlay.height = els.video.videoHeight || 720;
+      log(`Switched source to ${val}`);
+    } catch (err) {
+      log(`Source switch error: ${err.message}`);
+    }
+  } else {
+    maybeAutoStart();
+  }
 });
 
 els.videoInput.addEventListener("change", (e) => {
@@ -234,7 +333,26 @@ els.videoInput.addEventListener("change", (e) => {
 });
 
 async function setupSource() {
-  if (els.sourceSelect.value === "webcam") {
+  const val = els.sourceSelect.value;
+
+  // Stop any existing camera tracks before switching
+  try {
+    const cur = els.video.srcObject;
+    if (cur && cur.getTracks) cur.getTracks().forEach((t) => t.stop());
+  } catch (e) {
+    // ignore
+  }
+
+  if (val && val.startsWith("camera:")) {
+    const deviceId = val.split(":")[1];
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId }, width: 960, height: 720 },
+      audio: false,
+    });
+    els.video.srcObject = stream;
+    els.video.src = "";
+  } else if (val === "webcam") {
+    // Fallback generic webcam
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 960, height: 720 },
       audio: false,
@@ -244,6 +362,7 @@ async function setupSource() {
   } else if (!els.video.src) {
     throw new Error("Choose a video file first");
   }
+
   await els.video.play();
 }
 
@@ -466,6 +585,10 @@ els.startBtn.addEventListener("click", startTracking);
 els.stopBtn.addEventListener("click", stopTracking);
 
 window.addEventListener("load", () => {
+  // Populate camera list on load so user can pick a camera before starting
+  populateCameraOptions().catch((e) =>
+    console.warn("populateCameraOptions error:", e),
+  );
   window.setTimeout(() => maybeAutoStart(), 250);
 });
 
