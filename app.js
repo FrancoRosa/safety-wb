@@ -608,6 +608,25 @@ document.addEventListener("fullscreenchange", () => {
   els.fullscreenBtn.textContent = active ? "Exit Fullscreen" : "Fullscreen";
 });
 
+// Browsers only allow entering fullscreen from a user gesture, so a page
+// load alone can't trigger it. Request it on the very first interaction
+// instead, so the app goes fullscreen as soon as the user touches it.
+function requestAutoFullscreen() {
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+["pointerdown", "keydown"].forEach((evt) =>
+  document.addEventListener(evt, requestAutoFullscreen, {
+    once: true,
+    capture: true,
+  }),
+);
+
+// If launched as an installed PWA (manifest display: "fullscreen"), the
+// browser may already grant fullscreen without any gesture.
+window.addEventListener("load", requestAutoFullscreen);
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch((err) => {

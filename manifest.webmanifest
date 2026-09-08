@@ -3,9 +3,10 @@
   "short_name": "SafeTracker",
   "description": "Multi-object tracking application",
   "start_url": "./",
-  "display": "standalone",
-  "background_color": "#070b09",
-  "theme_color": "#070b09",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#0c0a05",
+  "theme_color": "#0c0a05",
   "icons": [
     {
       "src": "icon.svg",
