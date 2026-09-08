@@ -90,7 +90,6 @@ const COCO_CLASSES = [
 const IMG_SIZE = 640; // must match the imgsz used at export time
 const DEFAULT_MODEL_PATH = "./yolo26n.onnx";
 
-ort.env.wasm.wasmPaths = "./";
 ort.env.wasm.numThreads = 1;
 
 const els = {
