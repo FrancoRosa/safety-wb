@@ -87,6 +87,43 @@ const COCO_CLASSES = [
   "toothbrush",
 ];
 
+// Restrict the class-filter UI to this subset of COCO_CLASSES — leave the
+// array empty ([]) to expose all 80 classes instead. Names are matched
+// case-insensitively against COCO_CLASSES, with a small alias table below
+// for common synonyms. A name that still doesn't resolve to a real COCO
+// class is skipped (with a console warning) since the model can only ever
+// detect the 80 classes it was trained on.
+const TARGET_CLASS_NAMES = [
+  "person",
+  "car",
+  "motorbike",
+  "bus",
+  "truck",
+  "pile",
+];
+
+const CLASS_NAME_ALIASES = {
+  motorbike: "motorcycle",
+};
+
+const TARGET_CLASS_IDS = (() => {
+  if (!TARGET_CLASS_NAMES.length) return COCO_CLASSES.map((_, i) => i);
+  const ids = [];
+  for (const raw of TARGET_CLASS_NAMES) {
+    const lower = raw.toLowerCase();
+    const name = CLASS_NAME_ALIASES[lower] ?? lower;
+    const idx = COCO_CLASSES.indexOf(name);
+    if (idx === -1) {
+      console.warn(
+        `TARGET_CLASS_NAMES: "${raw}" is not one of the model's COCO classes — skipping.`,
+      );
+      continue;
+    }
+    if (!ids.includes(idx)) ids.push(idx);
+  }
+  return ids;
+})();
+
 const IMG_SIZE = 640; // must match the imgsz used at export time
 const DEFAULT_MODEL_PATH = "./yolo26n.onnx";
 
@@ -105,6 +142,7 @@ const els = {
   closeControlsBtn: document.getElementById("closeControlsBtn"),
   controlsPanel: document.getElementById("controlsPanel"),
   scrim: document.getElementById("scrim"),
+  updateToast: document.getElementById("updateToast"),
   video: document.getElementById("video"),
   overlay: document.getElementById("overlay"),
   stage: document.getElementById("stage"),
@@ -629,11 +667,40 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") setControlsOpen(false);
 });
 
+// ---------------------------------------------------------------------
+// Service worker + auto-update
+// ---------------------------------------------------------------------
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
+    // Only a page that was already under an active service worker cares
+    // about a controller swap — that's a real update. A brand-new install
+    // also fires "controllerchange" (null -> the new worker) but there's
+    // nothing to reload for, so ignore that case.
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let reloading = false;
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloading) return;
+      reloading = true;
+      els.updateToast.classList.remove("hidden");
+      window.setTimeout(() => window.location.reload(), 1200);
     });
+
+    navigator.serviceWorker
+      .register("./sw.js")
+      .then((reg) => {
+        // A tab can stay open for a long time (kiosk-style fullscreen use),
+        // so proactively poll for a new version instead of waiting for a
+        // fresh navigation.
+        window.setInterval(() => reg.update(), 60 * 60 * 1000);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update();
+        });
+      })
+      .catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
   });
 }
 
@@ -645,15 +712,13 @@ function loadClassFilter() {
   try {
     const raw = localStorage.getItem("classFilter");
     if (raw) {
-      const ids = JSON.parse(raw).filter(
-        (n) => Number.isInteger(n) && n >= 0 && n < COCO_CLASSES.length,
-      );
+      const ids = JSON.parse(raw).filter((n) => TARGET_CLASS_IDS.includes(n));
       if (ids.length) return new Set(ids);
     }
   } catch (err) {
     console.warn("Failed to read stored class filter:", err);
   }
-  return new Set([0]); // default: person
+  return new Set(TARGET_CLASS_IDS); // default: every targeted class
 }
 
 let selectedClasses = loadClassFilter();
@@ -675,7 +740,8 @@ function syncClassCheckboxes() {
 
 (function initClassFilters() {
   const frag = document.createDocumentFragment();
-  COCO_CLASSES.forEach((name, idx) => {
+  TARGET_CLASS_IDS.forEach((idx) => {
+    const name = COCO_CLASSES[idx];
     const label = document.createElement("label");
     label.className = "class-checkbox";
     const input = document.createElement("input");
@@ -695,7 +761,7 @@ function syncClassCheckboxes() {
 })();
 
 els.classAllBtn.addEventListener("click", () => {
-  selectedClasses = new Set(COCO_CLASSES.map((_, i) => i));
+  selectedClasses = new Set(TARGET_CLASS_IDS);
   syncClassCheckboxes();
   persistClassFilter();
 });
