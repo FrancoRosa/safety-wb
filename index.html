@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0c0a05" />
     <title>Safety · Browser Tracking Console</title>
     <link rel="manifest" href="manifest.webmanifest" />
@@ -12,156 +12,157 @@
   <body>
     <div class="scanlines" aria-hidden="true"></div>
 
-    <header class="topbar">
-      <div class="brand">
-        <img src="./icon.svg" alt="mortenson_logo" style="height: 2em;"/>
-        <div class="brand-text">
-          <h1>Safety tracker</h1>
-        </div>
-      </div>
-      <div class="topbar-status">
-        <div class="pill">
-          <span class="dot" id="backendDot"></span>BACKEND
-          <b id="backendStat">—</b>
-        </div>
-      </div>
-    </header>
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
 
-    <main class="layout">
-      <!-- ============ STAGE ============ -->
-      <section class="stage-wrap">
-        <div class="stage" id="stage">
-          <button
-            id="fullscreenBtn"
-            class="fullscreen-btn"
-            type="button"
-            aria-label="Toggle fullscreen"
-          >
-            Fullscreen
-          </button>
-          <video id="video" playsinline muted></video>
-          <canvas id="overlay"></canvas>
-          <div class="reticle tl"></div>
-          <div class="reticle tr"></div>
-          <div class="reticle bl"></div>
-          <div class="reticle br"></div>
-          <div class="live-badge" style="display: none">
-            <span class="dot"></span>LIVE
-          </div>
-          <div class="stage-empty">
-            <p>1 · Default model: <code>yolo26n.onnx</code></p>
-            <p>2 · Webcam or video source is selected automatically</p>
-            <p>3 · Tracking starts without a manual button press</p>
-          </div>
-        </div>
+      <button
+        id="menuBtn"
+        class="icon-btn menu-btn"
+        type="button"
+        aria-label="Open controls"
+        aria-expanded="false"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
 
-        <div class="telemetry-strip">
-          <div class="stat">
-            <span class="stat-label">FPS</span
-            ><span class="stat-val" id="fpsStat">0.0</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">DETECTIONS</span
-            ><span class="stat-val" id="detStat">0</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">ACTIVE TRACKS</span
-            ><span class="stat-val" id="trackStat">0</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">IDS ASSIGNED</span
-            ><span class="stat-val" id="totalStat">0</span>
-          </div>
+      <button
+        id="fullscreenBtn"
+        class="icon-btn fullscreen-btn"
+        type="button"
+        aria-label="Toggle fullscreen"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+          <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+          <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+          <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+        </svg>
+      </button>
+
+      <div class="live-badge" style="display: none">
+        <span class="dot"></span>LIVE
+      </div>
+
+      <div class="stage-empty">
+        <p>1 · Default model: <code>yolo26n.onnx</code></p>
+        <p>2 · Webcam or video source is selected automatically</p>
+        <p>3 · Tracking starts without a manual button press</p>
+      </div>
+
+      <div class="stats-overlay" id="statsOverlay">
+        <span>FPS <b id="fpsStat">0.0</b></span>
+        <span>DETECTIONS <b id="detStat">0</b></span>
+        <span>ACTIVE TRACKS <b id="trackStat">0</b></span>
+        <span>IDS ASSIGNED <b id="totalStat">0</b></span>
+      </div>
+    </div>
+
+    <div class="scrim" id="scrim"></div>
+
+    <aside class="controls-panel" id="controlsPanel">
+      <div class="controls-header">
+        <h1>Safety tracker</h1>
+        <button
+          id="closeControlsBtn"
+          class="icon-btn"
+          type="button"
+          aria-label="Close controls"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="4" y1="4" x2="20" y2="20"></line>
+            <line x1="20" y1="4" x2="4" y2="20"></line>
+          </svg>
+        </button>
+      </div>
+
+      <section class="panel-section" style="display: none">
+        <h2>Model</h2>
+        <label class="file-btn">
+          <input type="file" id="modelInput" accept=".onnx" />
+          Choose yolo26n.onnx
+        </label>
+        <p class="status pending" id="modelStatus">No model loaded</p>
+      </section>
+
+      <section class="panel-section">
+        <h2>Source</h2>
+        <select id="sourceSelect">
+          <option value="webcam">Webcam</option>
+          <option value="file">Video file</option>
+        </select>
+        <div class="file-btn-wrap hidden" id="videoInputWrap">
+          <label class="file-btn small">
+            <input type="file" id="videoInput" accept="video/*" />
+            Choose video file
+          </label>
+        </div>
+        <div class="btn-row">
+          <button id="startBtn" disabled>Start Tracking</button>
+          <button id="stopBtn" class="secondary" disabled>Stop</button>
         </div>
       </section>
 
-      <!-- ============ SIDEBAR ============ -->
-      <aside class="panel">
-        <section class="panel-section" style="display: none">
-          <h2>01 · Model</h2>
-          <label class="file-btn">
-            <input type="file" id="modelInput" accept=".onnx" />
-            Choose yolo26n.onnx
-          </label>
-          <p class="status pending" id="modelStatus">No model loaded</p>
-        </section>
+      <section class="panel-section">
+        <h2>Parameters</h2>
 
-        <section class="panel-section">
-          <h2>01 · Source</h2>
-          <select id="sourceSelect">
-            <option value="webcam">Webcam</option>
-            <option value="file">Video file</option>
-          </select>
-          <div class="file-btn-wrap hidden" id="videoInputWrap">
-            <label class="file-btn small">
-              <input type="file" id="videoInput" accept="video/*" />
-              Choose video file
-            </label>
-          </div>
-          <div class="btn-row hidden">
-            <button id="startBtn" disabled>Start Tracking</button>
-            <button id="stopBtn" class="secondary" disabled>Stop</button>
-          </div>
-        </section>
+        <label class="field">
+          <span>Confidence threshold <b id="confVal">0.50</b></span>
+          <input
+            type="range"
+            id="confSlider"
+            min="0.05"
+            max="0.9"
+            step="0.01"
+            value="0.5"
+          />
+        </label>
 
-        <section class="panel-section">
-          <h2>02 · Parameters</h2>
+        <label class="field">
+          <span>Match IoU threshold <b id="iouVal">0.30</b></span>
+          <input
+            type="range"
+            id="iouSlider"
+            min="0.1"
+            max="0.9"
+            step="0.01"
+            value="0.3"
+          />
+        </label>
 
-          <label class="field">
-            <span>Confidence threshold <b id="confVal">0.50</b></span>
-            <input
-              type="range"
-              id="confSlider"
-              min="0.05"
-              max="0.9"
-              step="0.01"
-              value="0.5"
-            />
-          </label>
+        <label class="field">
+          <span>Track buffer <b id="bufferVal">30f</b></span>
+          <input
+            type="range"
+            id="bufferSlider"
+            min="5"
+            max="90"
+            step="1"
+            value="30"
+          />
+        </label>
 
-          <label class="field">
-            <span>Match IoU threshold <b id="iouVal">0.30</b></span>
-            <input
-              type="range"
-              id="iouSlider"
-              min="0.1"
-              max="0.9"
-              step="0.01"
-              value="0.3"
-            />
-          </label>
+        <label class="checkbox">
+          <input type="checkbox" id="trailToggle" checked />
+          Draw motion trails
+        </label>
+      </section>
 
-          <label class="field">
-            <span>Track buffer <b id="bufferVal">30f</b></span>
-            <input
-              type="range"
-              id="bufferSlider"
-              min="5"
-              max="90"
-              step="1"
-              value="30"
-            />
-          </label>
+      <section class="panel-section grow">
+        <h2>Class filter</h2>
+        <div class="class-filter-actions">
+          <button type="button" id="classAllBtn" class="mini-btn">All</button>
+          <button type="button" id="classNoneBtn" class="mini-btn">None</button>
+        </div>
+        <div class="class-checkbox-list" id="classCheckboxList"></div>
+      </section>
 
-          <label class="field">
-            <span>Class filter</span>
-            <select id="classSelect"></select>
-          </label>
-
-          <label class="checkbox">
-            <input type="checkbox" id="trailToggle" checked />
-            Draw motion trails
-          </label>
-        </section>
-
-        <section class="panel-section grow">
-          <h2>03 · Event log</h2>
-          <pre class="log" id="log"></pre>
-        </section>
-      </aside>
-    </main>
-
-    <footer class="foot" style="text-align: center">All rights reserved</footer>
+      <p class="panel-foot">All rights reserved</p>
+    </aside>
 
     <script src="ort/ort.min.js"></script>
     <script src="tracker.js"></script>

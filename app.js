@@ -101,6 +101,10 @@ const els = {
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
   fullscreenBtn: document.getElementById("fullscreenBtn"),
+  menuBtn: document.getElementById("menuBtn"),
+  closeControlsBtn: document.getElementById("closeControlsBtn"),
+  controlsPanel: document.getElementById("controlsPanel"),
+  scrim: document.getElementById("scrim"),
   video: document.getElementById("video"),
   overlay: document.getElementById("overlay"),
   stage: document.getElementById("stage"),
@@ -110,14 +114,14 @@ const els = {
   iouVal: document.getElementById("iouVal"),
   bufferSlider: document.getElementById("bufferSlider"),
   bufferVal: document.getElementById("bufferVal"),
-  classSelect: document.getElementById("classSelect"),
+  classCheckboxList: document.getElementById("classCheckboxList"),
+  classAllBtn: document.getElementById("classAllBtn"),
+  classNoneBtn: document.getElementById("classNoneBtn"),
   trailToggle: document.getElementById("trailToggle"),
   fpsStat: document.getElementById("fpsStat"),
   detStat: document.getElementById("detStat"),
   trackStat: document.getElementById("trackStat"),
   totalStat: document.getElementById("totalStat"),
-  backendStat: document.getElementById("backendStat"),
-  log: document.getElementById("log"),
 };
 
 // Populate source select with available video devices (cameras)
@@ -216,8 +220,7 @@ let fpsSmoothed = 0;
 const ctx = els.overlay.getContext("2d");
 
 function log(msg) {
-  const t = new Date().toLocaleTimeString();
-  els.log.textContent = `[${t}] ${msg}\n` + els.log.textContent;
+  console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
 }
 
 function idColor(id) {
@@ -249,7 +252,6 @@ async function loadModelFromBuffer(buf, label) {
   if (!loaded) throw new Error("No available execution provider");
   session = loaded;
   inputName = session.inputNames[0];
-  els.backendStat.textContent = backendUsed.toUpperCase();
   els.modelStatus.textContent = `Loaded: ${label}`;
   els.modelStatus.className = "status ok";
   els.startBtn.disabled = false;
@@ -422,7 +424,7 @@ function letterbox(video) {
 // original video pixel coordinates. No NMS needed (YOLO26 is NMS-free).
 // ---------------------------------------------------------------------
 
-function decode(output, scale, padX, padY, confThresh, classFilter) {
+function decode(output, scale, padX, padY, confThresh, allowedClasses) {
   const data = output.data;
   const numDet = output.dims[1];
   const stride = output.dims[2]; // 6
@@ -432,7 +434,7 @@ function decode(output, scale, padX, padY, confThresh, classFilter) {
     const score = data[o + 4];
     if (score < confThresh) continue;
     const cls = Math.round(data[o + 5]);
-    if (classFilter !== "all" && cls !== Number(classFilter)) continue;
+    if (!allowedClasses.has(cls)) continue;
     let x1 = data[o + 0];
     let y1 = data[o + 1];
     let x2 = data[o + 2];
@@ -451,7 +453,7 @@ function decode(output, scale, padX, padY, confThresh, classFilter) {
 // Drawing
 // ---------------------------------------------------------------------
 
-function draw(tracks, videoW, videoH) {
+function draw(tracks) {
   ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
 
   for (const tr of tracks) {
@@ -508,13 +510,13 @@ async function frameLoop() {
       padX,
       padY,
       confThresh,
-      els.classSelect.value,
+      selectedClasses,
     );
     const tracks = tracker.update(dets);
 
     for (const tr of tracks) maxSeenId = Math.max(maxSeenId, tr.id);
 
-    draw(tracks, video.videoWidth, video.videoHeight);
+    draw(tracks);
 
     els.detStat.textContent = dets.length;
     els.trackStat.textContent = tracks.length;
@@ -594,7 +596,7 @@ window.addEventListener("load", () => {
 els.fullscreenBtn.addEventListener("click", async () => {
   try {
     if (!document.fullscreenElement) {
-      await els.stage.requestFullscreen();
+      await document.documentElement.requestFullscreen();
     } else {
       await document.exitFullscreen();
     }
@@ -605,27 +607,27 @@ els.fullscreenBtn.addEventListener("click", async () => {
 
 document.addEventListener("fullscreenchange", () => {
   const active = Boolean(document.fullscreenElement);
-  els.fullscreenBtn.textContent = active ? "Exit Fullscreen" : "Fullscreen";
+  els.fullscreenBtn.setAttribute("aria-pressed", String(active));
+  els.fullscreenBtn.title = active ? "Exit fullscreen" : "Fullscreen";
 });
 
-// Browsers only allow entering fullscreen from a user gesture, so a page
-// load alone can't trigger it. Request it on the very first interaction
-// instead, so the app goes fullscreen as soon as the user touches it.
-function requestAutoFullscreen() {
-  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  }
-}
-["pointerdown", "keydown"].forEach((evt) =>
-  document.addEventListener(evt, requestAutoFullscreen, {
-    once: true,
-    capture: true,
-  }),
-);
+// ---------------------------------------------------------------------
+// Controls drawer (hamburger)
+// ---------------------------------------------------------------------
 
-// If launched as an installed PWA (manifest display: "fullscreen"), the
-// browser may already grant fullscreen without any gesture.
-window.addEventListener("load", requestAutoFullscreen);
+function setControlsOpen(open) {
+  els.controlsPanel.classList.toggle("open", open);
+  els.scrim.classList.toggle("show", open);
+  els.menuBtn.setAttribute("aria-expanded", String(open));
+}
+els.menuBtn.addEventListener("click", () =>
+  setControlsOpen(!els.controlsPanel.classList.contains("open")),
+);
+els.closeControlsBtn.addEventListener("click", () => setControlsOpen(false));
+els.scrim.addEventListener("click", () => setControlsOpen(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setControlsOpen(false);
+});
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -635,17 +637,70 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// Populate class filter
-(function initClassSelect() {
-  const allOpt = document.createElement("option");
-  allOpt.value = "all";
-  allOpt.textContent = "All classes";
-  els.classSelect.appendChild(allOpt);
+// ---------------------------------------------------------------------
+// Class filter (checkboxes, any combination — persisted across sessions)
+// ---------------------------------------------------------------------
+
+function loadClassFilter() {
+  try {
+    const raw = localStorage.getItem("classFilter");
+    if (raw) {
+      const ids = JSON.parse(raw).filter(
+        (n) => Number.isInteger(n) && n >= 0 && n < COCO_CLASSES.length,
+      );
+      if (ids.length) return new Set(ids);
+    }
+  } catch (err) {
+    console.warn("Failed to read stored class filter:", err);
+  }
+  return new Set([0]); // default: person
+}
+
+let selectedClasses = loadClassFilter();
+
+function persistClassFilter() {
+  localStorage.setItem(
+    "classFilter",
+    JSON.stringify(Array.from(selectedClasses)),
+  );
+}
+
+function syncClassCheckboxes() {
+  els.classCheckboxList
+    .querySelectorAll("input[type=checkbox]")
+    .forEach((cb) => {
+      cb.checked = selectedClasses.has(Number(cb.value));
+    });
+}
+
+(function initClassFilters() {
+  const frag = document.createDocumentFragment();
   COCO_CLASSES.forEach((name, idx) => {
-    const opt = document.createElement("option");
-    opt.value = idx;
-    opt.textContent = name;
-    if (idx === 0) opt.selected = true; // default: person
-    els.classSelect.appendChild(opt);
+    const label = document.createElement("label");
+    label.className = "class-checkbox";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = idx;
+    input.checked = selectedClasses.has(idx);
+    input.addEventListener("change", () => {
+      if (input.checked) selectedClasses.add(idx);
+      else selectedClasses.delete(idx);
+      persistClassFilter();
+    });
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(name));
+    frag.appendChild(label);
   });
+  els.classCheckboxList.appendChild(frag);
 })();
+
+els.classAllBtn.addEventListener("click", () => {
+  selectedClasses = new Set(COCO_CLASSES.map((_, i) => i));
+  syncClassCheckboxes();
+  persistClassFilter();
+});
+els.classNoneBtn.addEventListener("click", () => {
+  selectedClasses.clear();
+  syncClassCheckboxes();
+  persistClassFilter();
+});
