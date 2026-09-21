@@ -243,8 +243,17 @@ async function populateCameraOptions() {
   }
 }
 
-// Kick off camera enumeration
+// Kick off camera enumeration, and refresh it whenever a camera is
+// plugged in / unplugged after the page has already loaded (e.g. a USB
+// webcam connected after the fact) instead of only checking once.
 populateCameraOptions();
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    populateCameraOptions().catch((e) =>
+      console.warn("populateCameraOptions error:", e),
+    );
+  });
+}
 
 let session = null;
 let tracker = null;
