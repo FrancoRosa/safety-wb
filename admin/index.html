@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0c0a05" />
+    <title>Usage Statistics</title>
+    <link rel="icon" type="image/svg+xml" href="../icon.svg" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header class="admin-header">
+        <div class="brand">
+          <img src="../icon.svg" alt="" width="24" height="24" />
+          <h1>Usage Statistics</h1>
+        </div>
+        <a href="../" class="back-link">← Back to tracker</a>
+      </header>
+      <div id="root"></div>
+    </main>
+
+    <script src="../vendor/react.production.min.js"></script>
+    <script src="../vendor/react-dom.production.min.js"></script>
+    <script src="../vendor/prop-types.min.js"></script>
+    <script src="../vendor/Recharts.js"></script>
+    <script src="../stats-db.js"></script>
+    <script src="admin.js"></script>
+  </body>
+</html>

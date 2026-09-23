@@ -631,6 +631,88 @@ function currentFrame() {
 }
 
 // ---------------------------------------------------------------------
+// Usage statistics — sessions + person sightings in IndexedDB (stats-db.js),
+// viewed at /admin/
+// ---------------------------------------------------------------------
+
+const PERSON_CLASS = COCO_CLASSES.indexOf("person");
+const SIGHTING_INTERVAL_MS = 5000; // one sample per person per 5 s
+const MIN_TRACK_HITS = 3; // skip one-frame flickers
+const HEARTBEAT_MS = 30000;
+const RETENTION_DAYS = 90;
+
+// Track IDs restart whenever a new tracker is created, so key sightings by
+// session + tracker generation + ID to count each person once.
+let trackerEpoch = 0;
+const usage = {
+  session: {
+    id: crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    start: Date.now(),
+    lastSeen: Date.now(),
+  },
+  pending: [],
+  lastLogged: new Map(),
+};
+
+function flushUsage() {
+  usage.session.lastSeen = Date.now();
+  const rows = usage.pending.splice(0);
+  Promise.all([
+    StatsDB.putSession({ ...usage.session }),
+    StatsDB.addSightings(rows),
+  ]).catch((err) => console.warn("Usage stats write failed:", err));
+}
+
+function recordSightings(tracks, frame) {
+  const now = Date.now();
+  const view = is360() ? (pano.planet ? "planet" : "360") : "flat";
+  for (const tr of tracks) {
+    if (tr.cls !== PERSON_CLASS || tr.timeSinceUpdate > 0) continue;
+    if (tr.hits < MIN_TRACK_HITS) continue;
+    const key = `${usage.session.id}/${trackerEpoch}/${tr.id}`;
+    const last = usage.lastLogged.get(key);
+    if (last && now - last < SIGHTING_INTERVAL_MS) continue;
+    usage.lastLogged.set(key, now);
+
+    // Feet position (box bottom-centre) — where the person stands.
+    const [x1, , x2, y2] = tr.box;
+    let x = Math.min(1, Math.max(0, (x1 + x2) / 2 / frame.width));
+    let y = Math.min(1, Math.max(0, y2 / frame.height));
+    if (view !== "flat") [x, y] = pano.viewToUv(x, y);
+    usage.pending.push({
+      t: now,
+      session: usage.session.id,
+      track: key,
+      cls: tr.cls,
+      x: Math.round(x * 1000) / 1000,
+      y: Math.round(y * 1000) / 1000,
+      score: Math.round(tr.score * 100) / 100,
+      view,
+    });
+  }
+  // Forget tracks that haven't been sampled for a while.
+  if (usage.lastLogged.size > 500) {
+    for (const [k, t] of usage.lastLogged) {
+      if (now - t > 60000) usage.lastLogged.delete(k);
+    }
+  }
+}
+
+flushUsage();
+window.setInterval(flushUsage, HEARTBEAT_MS);
+// Best effort on close; the heartbeat bounds the error to HEARTBEAT_MS
+// when the tab is killed without these firing.
+window.addEventListener("pagehide", flushUsage);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushUsage();
+});
+StatsDB.prune(Date.now() - RETENTION_DAYS * 86400000).catch((err) =>
+  console.warn("Usage stats prune failed:", err),
+);
+
+// ---------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------
 
@@ -676,6 +758,7 @@ async function frameLoop() {
     for (const tr of tracks) maxSeenId = Math.max(maxSeenId, tr.id);
 
     draw(tracks);
+    recordSightings(tracks, frame);
 
     els.detStat.textContent = dets.length;
     els.trackStat.textContent = tracks.length;
@@ -696,6 +779,7 @@ async function frameLoop() {
 // ---------------------------------------------------------------------
 
 function newTracker() {
+  trackerEpoch += 1;
   return new ByteTrackLite({
     highThresh: Number(els.confSlider.value),
     lowThresh: Math.max(0.05, Number(els.confSlider.value) - 0.3),

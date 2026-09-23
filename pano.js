@@ -164,6 +164,38 @@ class PanoViewer {
     this.planetScale = 4;
   }
 
+  // CPU mirror of the fragment shader: a point in the rendered view
+  // (nx, ny in 0..1, y down) -> where it came from in the equirectangular
+  // source frame (u, v in 0..1). Keep in sync with the shader above.
+  viewToUv(nx, ny) {
+    const aspect = this.canvas.width / this.canvas.height;
+    const ndcX = nx * 2 - 1;
+    const ndcY = 1 - ny * 2;
+    let x, y, z;
+    if (this.planet) {
+      const px = ndcX * aspect * this.planetScale;
+      const py = ndcY * this.planetScale;
+      const r = Math.hypot(px, py);
+      const theta = 2 * Math.atan(r * 0.5);
+      const s = r > 0 ? Math.sin(theta) / r : 0;
+      [x, y, z] = [px * s, py * s, Math.cos(theta)];
+    } else {
+      const t = Math.tan(this.fov / 2);
+      [x, y, z] = [ndcX * t * aspect, ndcY * t, 1];
+      const len = Math.hypot(x, y, z);
+      [x, y, z] = [x / len, y / len, z / len];
+    }
+    const cp = Math.cos(this.pitch);
+    const sp = Math.sin(this.pitch);
+    [y, z] = [y * cp + z * sp, -y * sp + z * cp];
+    const cy = Math.cos(this.yaw);
+    const sy = Math.sin(this.yaw);
+    [x, z] = [x * cy + z * sy, -x * sy + z * cy];
+    const lon = Math.atan2(x, z);
+    const lat = Math.asin(Math.max(-1, Math.min(1, y)));
+    return [lon / (2 * Math.PI) + 0.5, 0.5 - lat / Math.PI];
+  }
+
   render(video) {
     const gl = this.gl;
     const w = this.canvas.width;

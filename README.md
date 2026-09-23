@@ -53,6 +53,24 @@ file → **Start Tracking**.
 | `tracker.js` | `ByteTrackLite` — the two-stage IoU tracker, framework-agnostic |
 | `app.js` | Model loading, letterbox preprocessing, decoding `(1,300,6)` output, drawing, main loop |
 
+## Usage statistics (`/admin/`)
+
+The tracker records usage in the browser's own IndexedDB (`stats-db.js`) — nothing
+leaves the device:
+
+- **Sessions** — when the page was opened and last alive (a 30 s heartbeat stands in
+  for "closed", since tabs can be killed without warning).
+- **Person sightings** — one sample per tracked person every 5 s, with the feet
+  position (box bottom-centre) normalised 0–1 to the camera frame. In 360 modes the
+  position is mapped back to the raw 360 frame, so it doesn't depend on where the
+  view was pointed.
+
+Open `/admin/` **in the same browser on the same device** to see it per day and
+time window (default 06:00–18:00): stat tiles, people-per-15-min chart with app-open
+bands, a map of positions, the sessions list, and a CSV export. Data older than 90
+days is pruned automatically. The page has no login, so anyone who can open the app
+on that device can see it.
+
 ## Tuning parameters (mirrors the Python tracker args)
 
 - **Confidence threshold** — floor for a detection to count at all; also used as the

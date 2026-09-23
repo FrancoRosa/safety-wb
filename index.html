@@ -58,8 +58,8 @@
       <div class="stats-overlay" id="statsOverlay">
         <span>FPS <b id="fpsStat">0.0</b></span>
         <span>DETECTIONS <b id="detStat">0</b></span>
-        <span>ACTIVE TRACKS <b id="trackStat">0</b></span>
-        <span>IDS ASSIGNED <b id="totalStat">0</b></span>
+        <span style="display: none;">ACTIVE TRACKS <b id="trackStat">0</b></span>
+        <span style="display: none;">IDS ASSIGNED <b id="totalStat">0</b></span>
       </div>
     </div>
 
@@ -185,6 +185,7 @@
     <script src="ort/ort.min.js"></script>
     <script src="tracker.js"></script>
     <script src="pano.js"></script>
+    <script src="stats-db.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

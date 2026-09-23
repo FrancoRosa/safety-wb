@@ -1,4 +1,4 @@
-const CACHE_NAME = "safety-wb-v12";
+const CACHE_NAME = "safety-wb-v13";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,15 @@ const APP_SHELL = [
   "./app.js",
   "./tracker.js",
   "./pano.js",
+  "./stats-db.js",
+  "./admin/",
+  "./admin/index.html",
+  "./admin/admin.css",
+  "./admin/admin.js",
+  "./vendor/react.production.min.js",
+  "./vendor/react-dom.production.min.js",
+  "./vendor/prop-types.min.js",
+  "./vendor/Recharts.js",
   "./ort/ort.min.js",
   "./ort/ort.js",
   "./ort/ort.wasm.js",
@@ -55,7 +64,13 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match("./index.html")),
+        // Offline: serve the cached copy of this page (e.g. /admin/),
+        // falling back to the tracker.
+        .catch(() =>
+          caches
+            .match(request)
+            .then((cached) => cached || caches.match("./index.html")),
+        ),
     );
     return;
   }
