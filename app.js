@@ -255,6 +255,19 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   });
 }
 
+// A native <select>'s dropdown is an OS-drawn popup with no "opening"
+// event, so refresh just before it's about to appear: "mousedown" fires
+// right before the popup opens on pointer input, "focus" covers keyboard
+// access. When permission is already granted this is just a fast
+// enumerateDevices() call, so the list is fresh by the time it's seen.
+["mousedown", "focus"].forEach((evt) =>
+  els.sourceSelect.addEventListener(evt, () => {
+    populateCameraOptions().catch((e) =>
+      console.warn("populateCameraOptions error:", e),
+    );
+  }),
+);
+
 let session = null;
 let tracker = null;
 let running = false;
