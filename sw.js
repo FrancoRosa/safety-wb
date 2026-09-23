@@ -1,10 +1,11 @@
-const CACHE_NAME = "safety-wb-v9";
+const CACHE_NAME = "safety-wb-v10";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./tracker.js",
+  "./pano.js",
   "./ort/ort.min.js",
   "./ort/ort.js",
   "./ort/ort.wasm.js",

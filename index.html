@@ -14,6 +14,7 @@
 
     <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
+      <canvas id="panoCanvas" class="hidden"></canvas>
       <canvas id="overlay"></canvas>
 
       <button
@@ -108,6 +109,10 @@
             Choose video file
           </label>
         </div>
+        <label class="checkbox">
+          <input type="checkbox" id="pano360Toggle" />
+          360° video (drag to look, scroll to zoom)
+        </label>
         <div class="btn-row">
           <button id="startBtn" disabled>Start Tracking</button>
           <button id="stopBtn" class="secondary" disabled>Stop</button>
@@ -173,6 +178,7 @@
 
     <script src="ort/ort.min.js"></script>
     <script src="tracker.js"></script>
+    <script src="pano.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -1,0 +1,201 @@
+/* pano.js — YouTube-style 360° viewer
+ * Treats the incoming frame as an equirectangular (2:1) panorama and renders
+ * a rectilinear "virtual camera" view of it with WebGL. Every output pixel
+ * casts a ray from the camera (yaw / pitch / fov), converts it to
+ * longitude/latitude and samples the panorama there — exactly how 360 video
+ * players flatten the sphere into a normal-looking picture.
+ */
+
+class PanoViewer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.yaw = 0; // radians, + = look right
+    this.pitch = 0; // radians, + = look up
+    this.fov = (90 * Math.PI) / 180; // vertical field of view
+    this.minFov = (30 * Math.PI) / 180;
+    this.maxFov = (120 * Math.PI) / 180;
+
+    // preserveDrawingBuffer so the detector can drawImage() the rendered view.
+    const gl = canvas.getContext("webgl", {
+      preserveDrawingBuffer: true,
+      antialias: false,
+    });
+    if (!gl) throw new Error("WebGL not available");
+    this.gl = gl;
+
+    const vs = `
+      attribute vec2 aPos;
+      varying vec2 vNdc;
+      void main() {
+        vNdc = aPos;
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }`;
+    const fs = `
+      precision highp float;
+      varying vec2 vNdc;
+      uniform sampler2D uTex;
+      uniform float uYaw;
+      uniform float uPitch;
+      uniform float uTanHalfFov;
+      uniform float uAspect;
+      const float PI = 3.141592653589793;
+      void main() {
+        // Ray in camera space (x right, y up, z forward).
+        vec3 dir = normalize(vec3(
+          vNdc.x * uTanHalfFov * uAspect,
+          vNdc.y * uTanHalfFov,
+          1.0));
+        // Pitch (rotate around X), then yaw (rotate around Y).
+        float cp = cos(uPitch), sp = sin(uPitch);
+        dir = vec3(dir.x, dir.y * cp + dir.z * sp, -dir.y * sp + dir.z * cp);
+        float cy = cos(uYaw), sy = sin(uYaw);
+        dir = vec3(dir.x * cy + dir.z * sy, dir.y, -dir.x * sy + dir.z * cy);
+
+        float lon = atan(dir.x, dir.z);            // -PI..PI
+        float lat = asin(clamp(dir.y, -1.0, 1.0)); // -PI/2..PI/2
+        vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
+        gl_FragColor = texture2D(uTex, uv);
+      }`;
+
+    const prog = gl.createProgram();
+    for (const [type, src] of [
+      [gl.VERTEX_SHADER, vs],
+      [gl.FRAGMENT_SHADER, fs],
+    ]) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+        throw new Error(gl.getShaderInfoLog(sh));
+      gl.attachShader(prog, sh);
+    }
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+      throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    const aPos = gl.getAttribLocation(prog, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    this.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    // NPOT-safe params; REPEAT isn't allowed for NPOT textures in WebGL1, so
+    // the longitude seam is handled by the tiny clamp at the texture edge.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    this.u = {
+      yaw: gl.getUniformLocation(prog, "uYaw"),
+      pitch: gl.getUniformLocation(prog, "uPitch"),
+      tanHalfFov: gl.getUniformLocation(prog, "uTanHalfFov"),
+      aspect: gl.getUniformLocation(prog, "uAspect"),
+    };
+  }
+
+  // Match the drawing buffer to the on-screen aspect ratio so the view isn't
+  // stretched, capped so the render + detector readback stay cheap.
+  resize(cssW, cssH, maxW = 1280) {
+    const scale = Math.min(1, maxW / Math.max(1, cssW));
+    const w = Math.max(2, Math.round(cssW * scale));
+    const h = Math.max(2, Math.round(cssH * scale));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+  }
+
+  look(dYaw, dPitch) {
+    this.yaw = (this.yaw + dYaw) % (2 * Math.PI);
+    const lim = Math.PI / 2 - 0.01;
+    this.pitch = Math.max(-lim, Math.min(lim, this.pitch + dPitch));
+  }
+
+  zoom(factor) {
+    this.fov = Math.max(this.minFov, Math.min(this.maxFov, this.fov * factor));
+  }
+
+  reset() {
+    this.yaw = 0;
+    this.pitch = 0;
+    this.fov = (90 * Math.PI) / 180;
+  }
+
+  render(video) {
+    const gl = this.gl;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    gl.viewport(0, 0, w, h);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+    gl.uniform1f(this.u.yaw, this.yaw);
+    gl.uniform1f(this.u.pitch, this.pitch);
+    gl.uniform1f(this.u.tanHalfFov, Math.tan(this.fov / 2));
+    gl.uniform1f(this.u.aspect, w / h);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  // Wire YouTube-like controls: drag to look around, wheel / pinch to zoom,
+  // double-click to recenter. `enabled()` gates everything so the handlers
+  // can stay attached while 360 mode is off.
+  attachControls(target, enabled) {
+    const pointers = new Map();
+    let pinchDist = 0;
+
+    const radPerPx = () => this.fov / Math.max(1, target.clientHeight);
+
+    target.addEventListener("pointerdown", (e) => {
+      if (!enabled()) return;
+      target.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      }
+    });
+    target.addEventListener("pointermove", (e) => {
+      if (!enabled() || !pointers.has(e.pointerId)) return;
+      const prev = pointers.get(e.pointerId);
+      const cur = { x: e.clientX, y: e.clientY };
+      pointers.set(e.pointerId, cur);
+      if (pointers.size === 1) {
+        const k = radPerPx();
+        // Drag the scene with the pointer, like YouTube.
+        this.look(-(cur.x - prev.x) * k, (cur.y - prev.y) * k);
+      } else if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinchDist > 0) this.zoom(pinchDist / d);
+        pinchDist = d;
+      }
+    });
+    const release = (e) => {
+      pointers.delete(e.pointerId);
+      pinchDist = 0;
+    };
+    target.addEventListener("pointerup", release);
+    target.addEventListener("pointercancel", release);
+
+    target.addEventListener(
+      "wheel",
+      (e) => {
+        if (!enabled()) return;
+        e.preventDefault();
+        this.zoom(Math.exp(e.deltaY * 0.001));
+      },
+      { passive: false },
+    );
+    target.addEventListener("dblclick", () => {
+      if (enabled()) this.reset();
+    });
+  }
+}

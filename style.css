@@ -89,6 +89,12 @@ code {
   height: 100%;
 }
 
+/* 360 mode: the WebGL view replaces the raw equirectangular video, and the
+   overlay (topmost) takes drag / zoom input. */
+.stage.pano video { visibility: hidden; }
+.stage.pano #overlay { cursor: grab; touch-action: none; }
+.stage.pano #overlay:active { cursor: grabbing; }
+
 .live-badge {
   position: absolute;
   top: 14px; left: 50%;

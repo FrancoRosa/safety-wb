@@ -160,6 +160,8 @@ const els = {
   detStat: document.getElementById("detStat"),
   trackStat: document.getElementById("trackStat"),
   totalStat: document.getElementById("totalStat"),
+  pano360Toggle: document.getElementById("pano360Toggle"),
+  panoCanvas: document.getElementById("panoCanvas"),
 };
 
 // Populate source select with available video devices (cameras)
@@ -393,6 +395,14 @@ els.videoInput.addEventListener("change", (e) => {
   maybeAutoStart();
 });
 
+// 360 cameras (Ricoh Theta, Insta360 webcam mode, …) stream a 2:1
+// equirectangular frame, so ask for a matching mode when 360 is on.
+function cameraSize() {
+  return els.pano360Toggle.checked
+    ? { width: { ideal: 1920 }, height: { ideal: 960 } }
+    : { width: 960, height: 720 };
+}
+
 async function setupSource() {
   const val = els.sourceSelect.value;
 
@@ -407,7 +417,7 @@ async function setupSource() {
   if (val && val.startsWith("camera:")) {
     const deviceId = val.split(":")[1];
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId }, width: 960, height: 720 },
+      video: { deviceId: { exact: deviceId }, ...cameraSize() },
       audio: false,
     });
     els.video.srcObject = stream;
@@ -415,7 +425,7 @@ async function setupSource() {
   } else if (val === "webcam") {
     // Fallback generic webcam
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 960, height: 720 },
+      video: cameraSize(),
       audio: false,
     });
     els.video.srcObject = stream;
@@ -449,9 +459,7 @@ prepCanvas.width = IMG_SIZE;
 prepCanvas.height = IMG_SIZE;
 const prepCtx = prepCanvas.getContext("2d", { willReadFrequently: true });
 
-function letterbox(video) {
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+function letterbox(source, vw, vh) {
   const scale = Math.min(IMG_SIZE / vw, IMG_SIZE / vh);
   const nw = Math.round(vw * scale);
   const nh = Math.round(vh * scale);
@@ -460,7 +468,7 @@ function letterbox(video) {
 
   prepCtx.fillStyle = "rgb(114,114,114)"; // YOLO's standard pad color
   prepCtx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
-  prepCtx.drawImage(video, 0, 0, vw, vh, padX, padY, nw, nh);
+  prepCtx.drawImage(source, 0, 0, vw, vh, padX, padY, nw, nh);
 
   const { data } = prepCtx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
   const chw = new Float32Array(3 * IMG_SIZE * IMG_SIZE);
@@ -546,6 +554,67 @@ function draw(tracks) {
 }
 
 // ---------------------------------------------------------------------
+// 360° mode — YouTube-style equirectangular -> perspective projection
+// ---------------------------------------------------------------------
+
+let pano = null;
+try {
+  pano = new PanoViewer(els.panoCanvas);
+  pano.attachControls(els.overlay, () => is360());
+} catch (err) {
+  console.warn("360 viewer unavailable:", err);
+  els.pano360Toggle.disabled = true;
+}
+
+function is360() {
+  return Boolean(pano) && els.pano360Toggle.checked;
+}
+
+function apply360Mode() {
+  const on = is360();
+  els.stage.classList.toggle("pano", on);
+  els.panoCanvas.classList.toggle("hidden", !on);
+  // Box coordinates change space (raw frame vs. projected view), so any
+  // existing tracks are meaningless — start the IDs fresh.
+  if (tracker) tracker = newTracker();
+  ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
+}
+
+try {
+  els.pano360Toggle.checked = localStorage.getItem("pano360") === "1";
+} catch (err) {
+  // storage unavailable — default off
+}
+apply360Mode();
+els.pano360Toggle.addEventListener("change", () => {
+  try {
+    localStorage.setItem("pano360", els.pano360Toggle.checked ? "1" : "0");
+  } catch (err) {
+    // ignore
+  }
+  apply360Mode();
+  if (running && els.sourceSelect.value !== "file") {
+    setupSource().catch((err) => log(`Source switch error: ${err.message}`));
+  }
+});
+
+// The frame the detector and overlay work in: the raw video, or the
+// freshly rendered 360 view.
+function currentFrame() {
+  const video = els.video;
+  if (!is360()) {
+    return { source: video, width: video.videoWidth, height: video.videoHeight };
+  }
+  pano.resize(els.stage.clientWidth, els.stage.clientHeight);
+  pano.render(video);
+  return {
+    source: els.panoCanvas,
+    width: els.panoCanvas.width,
+    height: els.panoCanvas.height,
+  };
+}
+
+// ---------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------
 
@@ -554,7 +623,21 @@ async function frameLoop() {
   const video = els.video;
 
   if (video.readyState >= 2) {
-    const { tensor, scale, padX, padY } = letterbox(video);
+    // In 360 mode, detect on the flattened perspective view the user sees
+    // (not the raw equirectangular frame) so boxes line up on screen.
+    const frame = currentFrame();
+    if (
+      els.overlay.width !== frame.width ||
+      els.overlay.height !== frame.height
+    ) {
+      els.overlay.width = frame.width;
+      els.overlay.height = frame.height;
+    }
+    const { tensor, scale, padX, padY } = letterbox(
+      frame.source,
+      frame.width,
+      frame.height,
+    );
     const outputs = await session.run({ [inputName]: tensor });
     const outName = session.outputNames[0];
     const output = outputs[outName];
@@ -596,6 +679,15 @@ async function frameLoop() {
 // Start / stop
 // ---------------------------------------------------------------------
 
+function newTracker() {
+  return new ByteTrackLite({
+    highThresh: Number(els.confSlider.value),
+    lowThresh: Math.max(0.05, Number(els.confSlider.value) - 0.3),
+    iouThresh: Number(els.iouSlider.value),
+    trackBuffer: Number(els.bufferSlider.value),
+  });
+}
+
 async function startTracking() {
   if (!session || running) return;
   try {
@@ -609,12 +701,7 @@ async function startTracking() {
   els.overlay.height = els.video.videoHeight || 720;
   els.stage.classList.add("live");
 
-  tracker = new ByteTrackLite({
-    highThresh: Number(els.confSlider.value),
-    lowThresh: Math.max(0.05, Number(els.confSlider.value) - 0.3),
-    iouThresh: Number(els.iouSlider.value),
-    trackBuffer: Number(els.bufferSlider.value),
-  });
+  tracker = newTracker();
   maxSeenId = 0;
   running = true;
   els.startBtn.disabled = true;
