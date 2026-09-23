@@ -162,6 +162,7 @@ const els = {
   totalStat: document.getElementById("totalStat"),
   pano360Toggle: document.getElementById("pano360Toggle"),
   panoCanvas: document.getElementById("panoCanvas"),
+  planetToggle: document.getElementById("planetToggle"),
 };
 
 // Populate source select with available video devices (cameras)
@@ -564,6 +565,7 @@ try {
 } catch (err) {
   console.warn("360 viewer unavailable:", err);
   els.pano360Toggle.disabled = true;
+  els.planetToggle.disabled = true;
 }
 
 function is360() {
@@ -574,6 +576,11 @@ function apply360Mode() {
   const on = is360();
   els.stage.classList.toggle("pano", on);
   els.panoCanvas.classList.toggle("hidden", !on);
+  // Planet is a projection of the 360 frame, so it only applies in 360 mode.
+  els.planetToggle.disabled = !pano || !els.pano360Toggle.checked;
+  if (pano && pano.planet !== els.planetToggle.checked) {
+    pano.setPlanet(els.planetToggle.checked);
+  }
   // Box coordinates change space (raw frame vs. projected view), so any
   // existing tracks are meaningless — start the IDs fresh.
   if (tracker) tracker = newTracker();
@@ -582,6 +589,7 @@ function apply360Mode() {
 
 try {
   els.pano360Toggle.checked = localStorage.getItem("pano360") === "1";
+  els.planetToggle.checked = localStorage.getItem("panoPlanet") === "1";
 } catch (err) {
   // storage unavailable — default off
 }
@@ -596,6 +604,14 @@ els.pano360Toggle.addEventListener("change", () => {
   if (running && els.sourceSelect.value !== "file") {
     setupSource().catch((err) => log(`Source switch error: ${err.message}`));
   }
+});
+els.planetToggle.addEventListener("change", () => {
+  try {
+    localStorage.setItem("panoPlanet", els.planetToggle.checked ? "1" : "0");
+  } catch (err) {
+    // ignore
+  }
+  apply360Mode();
 });
 
 // The frame the detector and overlay work in: the raw video, or the

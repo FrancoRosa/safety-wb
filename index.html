@@ -109,10 +109,16 @@
             Choose video file
           </label>
         </div>
-        <label class="checkbox">
-          <input type="checkbox" id="pano360Toggle" />
-          360° video (drag to look, scroll to zoom)
-        </label>
+        <div class="btn-row">
+          <label class="toggle-btn" title="Treat the stream as 360° video — drag to look, scroll to zoom">
+            <input type="checkbox" id="pano360Toggle" />
+            360°
+          </label>
+          <label class="toggle-btn" title="Little planet — drag to spin / tilt, scroll to zoom">
+            <input type="checkbox" id="planetToggle" />
+            Planet
+          </label>
+        </div>
         <div class="btn-row">
           <button id="startBtn" disabled>Start Tracking</button>
           <button id="stopBtn" class="secondary" disabled>Stop</button>

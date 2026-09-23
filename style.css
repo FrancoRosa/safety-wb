@@ -378,6 +378,57 @@ input[type="range"] {
 }
 .checkbox input { accent-color: var(--accent); }
 
+/* Checkbox rendered as a button-sized toggle: outlined when off, filled
+   when on. The real input stays in the label (visually hidden) so it keeps
+   keyboard focus, form state and the change event. */
+.toggle-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  padding: 11px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+/* Status light: a hollow ring when off, a filled dot when on, so a toggle
+   reads as a switch rather than an action button like "Start Tracking". */
+.toggle-btn::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+.toggle-btn:has(input:checked)::before { background: currentColor; }
+.toggle-btn input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+.toggle-btn:hover:not(:has(input:disabled)) { color: var(--text); border-color: var(--text-dim); }
+.toggle-btn:has(input:checked) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1400;
+}
+.toggle-btn:has(input:checked):hover:not(:has(input:disabled)) { filter: brightness(1.12); color: #1a1400; border-color: var(--accent); }
+.toggle-btn:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle-btn:has(input:disabled) { opacity: 0.35; cursor: not-allowed; }
+
 .class-checkbox-list {
   flex: 1;
   display: flex;

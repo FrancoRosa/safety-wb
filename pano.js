@@ -4,6 +4,10 @@
  * casts a ray from the camera (yaw / pitch / fov), converts it to
  * longitude/latitude and samples the panorama there — exactly how 360 video
  * players flatten the sphere into a normal-looking picture.
+ *
+ * "planet" mode swaps the rectilinear lens for a stereographic one aimed
+ * straight down, producing the classic "little planet": the ground curls
+ * into a globe in the middle and the sky wraps around the edges.
  */
 
 class PanoViewer {
@@ -14,6 +18,10 @@ class PanoViewer {
     this.fov = (90 * Math.PI) / 180; // vertical field of view
     this.minFov = (30 * Math.PI) / 180;
     this.maxFov = (120 * Math.PI) / 180;
+    this.planet = false;
+    // Stereographic plane radius at the screen's top/bottom edge. The
+    // horizon sits at radius 2, so 4 puts it halfway to the edge.
+    this.planetScale = 4;
 
     // preserveDrawingBuffer so the detector can drawImage() the rendered view.
     const gl = canvas.getContext("webgl", {
@@ -38,13 +46,26 @@ class PanoViewer {
       uniform float uPitch;
       uniform float uTanHalfFov;
       uniform float uAspect;
+      uniform bool uPlanet;
+      uniform float uPlanetScale;
       const float PI = 3.141592653589793;
       void main() {
         // Ray in camera space (x right, y up, z forward).
-        vec3 dir = normalize(vec3(
-          vNdc.x * uTanHalfFov * uAspect,
-          vNdc.y * uTanHalfFov,
-          1.0));
+        vec3 dir;
+        if (uPlanet) {
+          // Inverse stereographic: plane radius r -> angle from the view
+          // axis theta = 2*atan(r/2), so the whole sphere fits on screen.
+          vec2 p = vec2(vNdc.x * uAspect, vNdc.y) * uPlanetScale;
+          float r = length(p);
+          float theta = 2.0 * atan(r * 0.5);
+          vec2 d = r > 0.0 ? p / r : vec2(0.0);
+          dir = vec3(d * sin(theta), cos(theta));
+        } else {
+          dir = normalize(vec3(
+            vNdc.x * uTanHalfFov * uAspect,
+            vNdc.y * uTanHalfFov,
+            1.0));
+        }
         // Pitch (rotate around X), then yaw (rotate around Y).
         float cp = cos(uPitch), sp = sin(uPitch);
         dir = vec3(dir.x, dir.y * cp + dir.z * sp, -dir.y * sp + dir.z * cp);
@@ -99,6 +120,8 @@ class PanoViewer {
       pitch: gl.getUniformLocation(prog, "uPitch"),
       tanHalfFov: gl.getUniformLocation(prog, "uTanHalfFov"),
       aspect: gl.getUniformLocation(prog, "uAspect"),
+      planet: gl.getUniformLocation(prog, "uPlanet"),
+      planetScale: gl.getUniformLocation(prog, "uPlanetScale"),
     };
   }
 
@@ -116,18 +139,29 @@ class PanoViewer {
 
   look(dYaw, dPitch) {
     this.yaw = (this.yaw + dYaw) % (2 * Math.PI);
-    const lim = Math.PI / 2 - 0.01;
+    const lim = Math.PI / 2;
     this.pitch = Math.max(-lim, Math.min(lim, this.pitch + dPitch));
   }
 
   zoom(factor) {
+    if (this.planet) {
+      this.planetScale = Math.max(1, Math.min(12, this.planetScale * factor));
+      return;
+    }
     this.fov = Math.max(this.minFov, Math.min(this.maxFov, this.fov * factor));
+  }
+
+  setPlanet(on) {
+    this.planet = on;
+    this.reset();
   }
 
   reset() {
     this.yaw = 0;
-    this.pitch = 0;
+    // Planet mode looks straight down at the ground (nadir).
+    this.pitch = this.planet ? -Math.PI / 2 : 0;
     this.fov = (90 * Math.PI) / 180;
+    this.planetScale = 4;
   }
 
   render(video) {
@@ -141,6 +175,8 @@ class PanoViewer {
     gl.uniform1f(this.u.pitch, this.pitch);
     gl.uniform1f(this.u.tanHalfFov, Math.tan(this.fov / 2));
     gl.uniform1f(this.u.aspect, w / h);
+    gl.uniform1i(this.u.planet, this.planet ? 1 : 0);
+    gl.uniform1f(this.u.planetScale, this.planetScale);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
@@ -151,7 +187,10 @@ class PanoViewer {
     const pointers = new Map();
     let pinchDist = 0;
 
-    const radPerPx = () => this.fov / Math.max(1, target.clientHeight);
+    // The planet shows the whole sphere, so a screen-height drag turns it
+    // half a revolution rather than one field of view.
+    const radPerPx = () =>
+      (this.planet ? Math.PI : this.fov) / Math.max(1, target.clientHeight);
 
     target.addEventListener("pointerdown", (e) => {
       if (!enabled()) return;
