@@ -2,6 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Static hosts with "clean URLs" (Cloudflare Pages, Vercel, Netlify…)
+      // serve this page at /admin without a trailing slash, which would make
+      // the relative paths below resolve against the site root (/admin.js →
+      // 404). Pin the base to this page's folder so they work either way.
+      (function () {
+        var p = location.pathname;
+        if (!p.endsWith("/")) {
+          p = /\.[^/]*$/.test(p) ? p.replace(/[^/]*$/, "") : p + "/";
+        }
+        var base = document.createElement("base");
+        base.href = p;
+        document.head.appendChild(base);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0c0a05" />
     <title>Usage Statistics</title>
