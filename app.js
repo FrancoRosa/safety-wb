@@ -163,6 +163,8 @@ const els = {
   pano360Toggle: document.getElementById("pano360Toggle"),
   panoCanvas: document.getElementById("panoCanvas"),
   planetToggle: document.getElementById("planetToggle"),
+  panoQuality: document.getElementById("panoQuality"),
+  resolutionInfo: document.getElementById("resolutionInfo"),
 };
 
 // Populate source select with available video devices (cameras)
@@ -397,11 +399,50 @@ els.videoInput.addEventListener("change", (e) => {
 });
 
 // 360 cameras (Ricoh Theta, Insta360 webcam mode, …) stream a 2:1
-// equirectangular frame, so ask for a matching mode when 360 is on.
-function cameraSize() {
-  return els.pano360Toggle.checked
-    ? { width: { ideal: 1920 }, height: { ideal: 960 } }
-    : { width: 960, height: 720 };
+// equirectangular frame. The 360° resolution setting caps both the camera
+// frame (uploaded to the GPU every frame) and the rendered view (read back
+// from the GPU every frame for the detector) — the two costs that grow
+// with pixel count. YOLO only ever sees 640 px, so less rarely hurts.
+const PANO_QUALITY = {
+  high: { width: 1920, height: 960, renderW: 1280 },
+  medium: { width: 1280, height: 640, renderW: 960 },
+  low: { width: 960, height: 480, renderW: 640 },
+};
+
+function panoQuality() {
+  return PANO_QUALITY[els.panoQuality.value] || PANO_QUALITY.medium;
+}
+
+// `soft` drops the hard caps for browsers that can't rescale the camera
+// and reject them with an OverconstrainedError.
+function cameraSize(soft = false) {
+  if (!els.pano360Toggle.checked) return { width: 960, height: 720 };
+  const { width, height } = panoQuality();
+  if (soft) return { width: { ideal: width }, height: { ideal: height } };
+  // max + crop-and-scale: the browser downscales a camera that only offers
+  // larger modes (e.g. 3840×1920) instead of passing the full frame through.
+  return {
+    width: { ideal: width, max: width },
+    height: { ideal: height, max: height },
+    resizeMode: "crop-and-scale",
+  };
+}
+
+async function openCamera(video) {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: { ...video, ...cameraSize() },
+      audio: false,
+    });
+  } catch (err) {
+    if (err.name !== "OverconstrainedError" || !els.pano360Toggle.checked) {
+      throw err;
+    }
+    return navigator.mediaDevices.getUserMedia({
+      video: { ...video, ...cameraSize(true) },
+      audio: false,
+    });
+  }
 }
 
 async function setupSource() {
@@ -417,18 +458,12 @@ async function setupSource() {
 
   if (val && val.startsWith("camera:")) {
     const deviceId = val.split(":")[1];
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId }, ...cameraSize() },
-      audio: false,
-    });
+    const stream = await openCamera({ deviceId: { exact: deviceId } });
     els.video.srcObject = stream;
     els.video.src = "";
   } else if (val === "webcam") {
     // Fallback generic webcam
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: cameraSize(),
-      audio: false,
-    });
+    const stream = await openCamera({});
     els.video.srcObject = stream;
     els.video.src = "";
   } else if (!els.video.src) {
@@ -566,6 +601,7 @@ try {
   console.warn("360 viewer unavailable:", err);
   els.pano360Toggle.disabled = true;
   els.planetToggle.disabled = true;
+  els.panoQuality.disabled = true;
 }
 
 function is360() {
@@ -578,6 +614,8 @@ function apply360Mode() {
   els.panoCanvas.classList.toggle("hidden", !on);
   // Planet is a projection of the 360 frame, so it only applies in 360 mode.
   els.planetToggle.disabled = !pano || !els.pano360Toggle.checked;
+  els.panoQuality.disabled = !pano || !els.pano360Toggle.checked;
+  if (!on) els.resolutionInfo.textContent = "";
   if (pano && pano.planet !== els.planetToggle.checked) {
     pano.setPlanet(els.planetToggle.checked);
   }
@@ -590,6 +628,8 @@ function apply360Mode() {
 try {
   els.pano360Toggle.checked = localStorage.getItem("pano360") === "1";
   els.planetToggle.checked = localStorage.getItem("panoPlanet") === "1";
+  const quality = localStorage.getItem("panoQuality");
+  if (quality in PANO_QUALITY) els.panoQuality.value = quality;
 } catch (err) {
   // storage unavailable — default off
 }
@@ -613,6 +653,28 @@ els.planetToggle.addEventListener("change", () => {
   }
   apply360Mode();
 });
+els.panoQuality.addEventListener("change", () => {
+  try {
+    localStorage.setItem("panoQuality", els.panoQuality.value);
+  } catch (err) {
+    // ignore
+  }
+  // Reopen the camera at the new size; the render cap applies next frame.
+  if (running && is360() && els.sourceSelect.value !== "file") {
+    setupSource().catch((err) => log(`Source switch error: ${err.message}`));
+  }
+});
+
+// Show what the pipeline actually runs at — cameras may not honour the
+// requested size, and video files keep their own resolution.
+function updateResolutionInfo(video) {
+  const text =
+    `Input ${video.videoWidth}×${video.videoHeight} → ` +
+    `view ${els.panoCanvas.width}×${els.panoCanvas.height}`;
+  if (els.resolutionInfo.textContent !== text) {
+    els.resolutionInfo.textContent = text;
+  }
+}
 
 // The frame the detector and overlay work in: the raw video, or the
 // freshly rendered 360 view.
@@ -621,8 +683,9 @@ function currentFrame() {
   if (!is360()) {
     return { source: video, width: video.videoWidth, height: video.videoHeight };
   }
-  pano.resize(els.stage.clientWidth, els.stage.clientHeight);
+  pano.resize(els.stage.clientWidth, els.stage.clientHeight, panoQuality().renderW);
   pano.render(video);
+  updateResolutionInfo(video);
   return {
     source: els.panoCanvas,
     width: els.panoCanvas.width,

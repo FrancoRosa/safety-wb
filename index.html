@@ -119,6 +119,15 @@
             Bird's eye
           </label>
         </div>
+        <label class="field pano-quality-field">
+          <span>360° resolution</span>
+          <select id="panoQuality">
+            <option value="high">High · 1920×960</option>
+            <option value="medium" selected>Medium · 1280×640</option>
+            <option value="low">Low · 960×480</option>
+          </select>
+          <p class="status" id="resolutionInfo"></p>
+        </label>
         <div class="btn-row">
           <button id="startBtn" disabled>Start Tracking</button>
           <button id="stopBtn" class="secondary" disabled>Stop</button>

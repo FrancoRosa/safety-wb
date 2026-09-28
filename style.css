@@ -317,6 +317,13 @@ select {
 
 .btn-row { display: flex; gap: 8px; margin-top: 4px; }
 
+.pano-quality-field { margin: 12px 0 6px; }
+.pano-quality-field span { display: block; margin-bottom: 6px; }
+.pano-quality-field select { margin-bottom: 0; }
+.pano-quality-field select:disabled { opacity: 0.35; cursor: not-allowed; }
+.pano-quality-field .status { margin-top: 8px; }
+.pano-quality-field .status:empty { display: none; }
+
 button {
   flex: 1;
   font-family: var(--font-mono);
