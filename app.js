@@ -165,6 +165,14 @@ const els = {
   planetToggle: document.getElementById("planetToggle"),
   panoQuality: document.getElementById("panoQuality"),
   resolutionInfo: document.getElementById("resolutionInfo"),
+  panoControls: document.getElementById("panoControls"),
+  viewport: document.getElementById("viewport"),
+  frame: document.getElementById("frame"),
+  minimapWrap: document.getElementById("minimapWrap"),
+  minimapToggle: document.getElementById("minimapToggle"),
+  minimap: document.getElementById("minimap"),
+  minimapCanvas: document.getElementById("minimapCanvas"),
+  viewModeInputs: document.querySelectorAll('input[name="viewMode"]'),
 };
 
 // Populate source select with available video devices (cameras)
@@ -593,6 +601,12 @@ function draw(tracks) {
 // 360° mode — YouTube-style equirectangular -> perspective projection
 // ---------------------------------------------------------------------
 
+// The 360° / Bird's eye controls are hidden for now; flip this to bring
+// them back. While hidden, 360 mode is forced off so a previously stored
+// "on" can't leave the view stuck in a mode nobody can switch off.
+const PANO_UI_ENABLED = false;
+if (PANO_UI_ENABLED) els.panoControls.style.display = "";
+
 let pano = null;
 try {
   pano = new PanoViewer(els.panoCanvas);
@@ -623,6 +637,8 @@ function apply360Mode() {
   // existing tracks are meaningless — start the IDs fresh.
   if (tracker) tracker = newTracker();
   ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
+  // 360 always uses the full-screen view; narrow scrolling is raw video only.
+  layoutFrame();
 }
 
 try {
@@ -632,6 +648,10 @@ try {
   if (quality in PANO_QUALITY) els.panoQuality.value = quality;
 } catch (err) {
   // storage unavailable — default off
+}
+if (!PANO_UI_ENABLED) {
+  els.pano360Toggle.checked = false;
+  els.planetToggle.checked = false;
 }
 apply360Mode();
 els.pano360Toggle.addEventListener("change", () => {
@@ -692,6 +712,197 @@ function currentFrame() {
     height: els.panoCanvas.height,
   };
 }
+
+// ---------------------------------------------------------------------
+// Display mode — "full" stretches the image to the screen; "narrow" keeps
+// the camera's aspect ratio at full height and scrolls sideways, with a
+// minimap showing which part of the frame is on screen.
+// ---------------------------------------------------------------------
+
+function viewMode() {
+  const checked = [...els.viewModeInputs].find((i) => i.checked);
+  return checked ? checked.value : "full";
+}
+
+// Size the frame for the current mode, keeping the same part of the image
+// centred when the width changes (rotation, fullscreen, new camera).
+// Uses only the DOM so apply360Mode() can call it during start-up.
+function layoutFrame() {
+  const video = els.video;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const vp = els.viewport;
+  let width = 0;
+  if (viewMode() === "narrow" && !is360() && vw && vh) {
+    const w = Math.round((vp.clientHeight * vw) / vh);
+    if (w > vp.clientWidth + 1) width = w;
+  }
+  const scrollable = width > 0;
+  const center =
+    vp.scrollWidth > vp.clientWidth
+      ? (vp.scrollLeft + vp.clientWidth / 2) / vp.scrollWidth
+      : 0.5;
+  els.frame.style.width = scrollable ? `${width}px` : "";
+  els.stage.classList.toggle("narrow", scrollable);
+  els.minimapWrap.classList.toggle("hidden", !scrollable);
+  if (scrollable) {
+    els.minimap.style.aspectRatio = `${vw} / ${vh}`;
+    vp.scrollLeft = center * width - vp.clientWidth / 2;
+  }
+}
+
+const minimapCtx = els.minimapCanvas.getContext("2d");
+let minimapTracks = [];
+
+// Whole frame in miniature, everything off screen dimmed, the visible
+// window outlined, and a dot per tracked object — so people outside the
+// visible part are still noticed.
+function drawMinimap(tracks = minimapTracks) {
+  minimapTracks = tracks;
+  const wrap = els.minimapWrap.classList;
+  if (wrap.contains("hidden") || wrap.contains("collapsed")) return;
+  const video = els.video;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+
+  const c = els.minimapCanvas;
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(c.clientWidth * dpr);
+  const h = Math.round(c.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
+  }
+  const g = minimapCtx;
+  g.drawImage(video, 0, 0, w, h);
+
+  const vp = els.viewport;
+  const x0 = (vp.scrollLeft / vp.scrollWidth) * w;
+  const x1 = ((vp.scrollLeft + vp.clientWidth) / vp.scrollWidth) * w;
+  g.fillStyle = "rgba(0, 0, 0, 0.6)";
+  g.fillRect(0, 0, x0, h);
+  g.fillRect(x1, 0, w - x1, h);
+  g.strokeStyle = "#ffc800";
+  g.lineWidth = 2 * dpr;
+  g.strokeRect(x0 + dpr, dpr, x1 - x0 - 2 * dpr, h - 2 * dpr);
+
+  for (const tr of tracks) {
+    const [bx1, by1, bx2, by2] = tr.box;
+    g.beginPath();
+    g.arc(((bx1 + bx2) / 2 / vw) * w, ((by1 + by2) / 2 / vh) * h, 3.5 * dpr, 0, Math.PI * 2);
+    g.fillStyle = idColor(tr.id);
+    g.fill();
+    g.lineWidth = 1.5 * dpr;
+    g.strokeStyle = "#000";
+    g.stroke();
+  }
+}
+
+function scrollToFraction(frac) {
+  const vp = els.viewport;
+  vp.scrollLeft = frac * vp.scrollWidth - vp.clientWidth / 2;
+}
+
+(function initDisplayMode() {
+  try {
+    const stored = localStorage.getItem("viewMode");
+    els.viewModeInputs.forEach((i) => (i.checked = i.value === stored));
+    if (![...els.viewModeInputs].some((i) => i.checked)) {
+      els.viewModeInputs[0].checked = true;
+    }
+  } catch (err) {
+    // storage unavailable — default full
+  }
+  els.viewModeInputs.forEach((input) =>
+    input.addEventListener("change", () => {
+      try {
+        localStorage.setItem("viewMode", viewMode());
+      } catch (err) {
+        // ignore
+      }
+      layoutFrame();
+      drawMinimap();
+    }),
+  );
+
+  // Relayout whenever the frame or the screen changes size.
+  els.video.addEventListener("loadedmetadata", layoutFrame);
+  els.video.addEventListener("resize", layoutFrame);
+  window.addEventListener("resize", layoutFrame);
+  document.addEventListener("fullscreenchange", layoutFrame);
+  els.viewport.addEventListener("scroll", () => drawMinimap(), { passive: true });
+
+  // Hide / show the minimap; remembered across visits.
+  const setMinimapCollapsed = (collapsed) => {
+    els.minimapWrap.classList.toggle("collapsed", collapsed);
+    els.minimapToggle.setAttribute("aria-expanded", String(!collapsed));
+    const label = collapsed ? "Show minimap" : "Hide minimap";
+    els.minimapToggle.setAttribute("aria-label", label);
+    els.minimapToggle.title = label;
+    if (!collapsed) drawMinimap();
+  };
+  try {
+    setMinimapCollapsed(localStorage.getItem("minimapCollapsed") === "1");
+  } catch (err) {
+    // storage unavailable — default shown
+  }
+  els.minimapToggle.addEventListener("click", () => {
+    const collapsed = !els.minimapWrap.classList.contains("collapsed");
+    setMinimapCollapsed(collapsed);
+    try {
+      localStorage.setItem("minimapCollapsed", collapsed ? "1" : "0");
+    } catch (err) {
+      // ignore
+    }
+  });
+
+  // Minimap: tap or drag to centre the view on that spot; arrow keys step.
+  let minimapDrag = false;
+  const jump = (e) => {
+    const r = els.minimap.getBoundingClientRect();
+    scrollToFraction((e.clientX - r.left) / r.width);
+  };
+  els.minimap.addEventListener("pointerdown", (e) => {
+    minimapDrag = true;
+    els.minimap.setPointerCapture(e.pointerId);
+    jump(e);
+  });
+  els.minimap.addEventListener("pointermove", (e) => minimapDrag && jump(e));
+  els.minimap.addEventListener("pointerup", () => (minimapDrag = false));
+  els.minimap.addEventListener("pointercancel", () => (minimapDrag = false));
+  els.minimap.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    els.viewport.scrollBy({ left: step * els.viewport.clientWidth * 0.25 });
+  });
+
+  // Touch scrolls natively; give mouse users drag and wheel scrolling too.
+  let drag = null;
+  els.viewport.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || !els.stage.classList.contains("narrow")) return;
+    drag = { x: e.clientX, left: els.viewport.scrollLeft };
+    els.viewport.setPointerCapture(e.pointerId);
+  });
+  els.viewport.addEventListener("pointermove", (e) => {
+    if (drag) els.viewport.scrollLeft = drag.left - (e.clientX - drag.x);
+  });
+  els.viewport.addEventListener("pointerup", () => (drag = null));
+  els.viewport.addEventListener("pointercancel", () => (drag = null));
+  els.viewport.addEventListener(
+    "wheel",
+    (e) => {
+      if (!els.stage.classList.contains("narrow") || e.ctrlKey) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      els.viewport.scrollLeft += e.deltaY;
+    },
+    { passive: false },
+  );
+
+  layoutFrame();
+})();
 
 // ---------------------------------------------------------------------
 // Usage statistics — sessions + person sightings in IndexedDB (stats-db.js),
@@ -821,6 +1032,7 @@ async function frameLoop() {
     for (const tr of tracks) maxSeenId = Math.max(maxSeenId, tr.id);
 
     draw(tracks);
+    drawMinimap(tracks);
     recordSightings(tracks, frame);
 
     els.detStat.textContent = dets.length;

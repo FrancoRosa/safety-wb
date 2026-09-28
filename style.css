@@ -89,6 +89,75 @@ code {
   height: 100%;
 }
 
+/* The image lives in a scroll box. "Full" keeps the frame at 100% (the
+   original stretched view); "Narrow" widens the frame to the camera's
+   aspect ratio at full height and scrolls it sideways. The minimap shows
+   the position, so the native scrollbar is hidden. */
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.viewport::-webkit-scrollbar { display: none; }
+.frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.stage.narrow #overlay { cursor: grab; touch-action: pan-x; }
+.stage.narrow #overlay:active { cursor: grabbing; }
+
+/* Minimap + its hide/show button, centred at the top between the menu and
+   fullscreen buttons. Collapsed, only the button remains. */
+.minimap-wrap {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.minimap-wrap.collapsed .minimap { display: none; }
+.minimap-wrap .icon-show,
+.minimap-wrap.collapsed .icon-hide { display: none; }
+.minimap-wrap.collapsed .icon-show { display: block; }
+
+.minimap-toggle {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 6, 3, 0.7);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  backdrop-filter: blur(4px);
+}
+.minimap-toggle:hover:not(:disabled) { filter: brightness(1.2); border-color: var(--accent); }
+.minimap-wrap.collapsed .minimap-toggle { width: 40px; height: 40px; }
+
+.minimap {
+  position: relative;
+  width: min(calc(50vw - 68px), 120px);
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+.minimap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* 360 mode: the WebGL view replaces the raw equirectangular video, and the
    overlay (topmost) takes drag / zoom input. */
 .stage.pano video { visibility: hidden; }

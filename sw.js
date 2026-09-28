@@ -1,4 +1,4 @@
-const CACHE_NAME = "safety-wb-v15";
+const CACHE_NAME = "safety-wb-v17";
 const APP_SHELL = [
   "./",
   "./index.html",

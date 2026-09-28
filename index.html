@@ -13,9 +13,43 @@
     <div class="scanlines" aria-hidden="true"></div>
 
     <div class="stage" id="stage">
-      <video id="video" playsinline muted></video>
-      <canvas id="panoCanvas" class="hidden"></canvas>
-      <canvas id="overlay"></canvas>
+      <!-- Scroll container: in "Narrow" display mode the frame keeps the
+           camera's aspect ratio at full height and scrolls sideways. -->
+      <div class="viewport" id="viewport">
+        <div class="frame" id="frame">
+          <video id="video" playsinline muted></video>
+          <canvas id="panoCanvas" class="hidden"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+
+      <!-- Narrow mode: whole frame in miniature, visible part highlighted.
+           Tap / drag to jump. -->
+      <div class="minimap-wrap hidden" id="minimapWrap">
+        <div class="minimap" id="minimap" role="slider" aria-label="Visible part of the image" tabindex="0">
+          <canvas id="minimapCanvas"></canvas>
+        </div>
+        <button
+          id="minimapToggle"
+          class="minimap-toggle"
+          type="button"
+          aria-controls="minimap"
+          aria-expanded="true"
+          aria-label="Hide minimap"
+          title="Hide minimap"
+        >
+          <!-- shown while open: collapse -->
+          <svg class="icon-hide" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 15 12 9 18 15"></polyline>
+          </svg>
+          <!-- shown while collapsed: map -->
+          <svg class="icon-show" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+            <line x1="8" y1="2" x2="8" y2="18"></line>
+            <line x1="16" y1="6" x2="16" y2="22"></line>
+          </svg>
+        </button>
+      </div>
 
       <button
         id="menuBtn"
@@ -109,28 +143,46 @@
             Choose video file
           </label>
         </div>
-        <div class="btn-row">
-          <label class="toggle-btn" title="Treat the stream as 360° video — drag to look, scroll to zoom">
-            <input type="checkbox" id="pano360Toggle" />
-            360°
-          </label>
-          <label class="toggle-btn" title="Little planet — drag to spin / tilt, scroll to zoom">
-            <input type="checkbox" id="planetToggle" />
-            Bird's eye
+        <!-- 360° / Bird's eye controls: hidden for now. Set PANO_UI_ENABLED
+             in app.js to true to bring them back. -->
+        <div id="panoControls" style="display: none">
+          <div class="btn-row">
+            <label class="toggle-btn" title="Treat the stream as 360° video — drag to look, scroll to zoom">
+              <input type="checkbox" id="pano360Toggle" />
+              360°
+            </label>
+            <label class="toggle-btn" title="Little planet — drag to spin / tilt, scroll to zoom">
+              <input type="checkbox" id="planetToggle" />
+              Bird's eye
+            </label>
+          </div>
+          <label class="field pano-quality-field">
+            <span>360° resolution</span>
+            <select id="panoQuality">
+              <option value="high">High · 1920×960</option>
+              <option value="medium" selected>Medium · 1280×640</option>
+              <option value="low">Low · 960×480</option>
+            </select>
+            <p class="status" id="resolutionInfo"></p>
           </label>
         </div>
-        <label class="field pano-quality-field">
-          <span>360° resolution</span>
-          <select id="panoQuality">
-            <option value="high">High · 1920×960</option>
-            <option value="medium" selected>Medium · 1280×640</option>
-            <option value="low">Low · 960×480</option>
-          </select>
-          <p class="status" id="resolutionInfo"></p>
-        </label>
         <div class="btn-row">
           <button id="startBtn" disabled>Start Tracking</button>
           <button id="stopBtn" class="secondary" disabled>Stop</button>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Display</h2>
+        <div class="btn-row">
+          <label class="toggle-btn" title="Fit the whole image to the screen">
+            <input type="radio" name="viewMode" value="full" checked />
+            Full
+          </label>
+          <label class="toggle-btn" title="Keep the image's proportions and scroll sideways — for narrow screens">
+            <input type="radio" name="viewMode" value="narrow" />
+            Narrow
+          </label>
         </div>
       </section>
 
