@@ -1,4 +1,4 @@
-const CACHE_NAME = "safety-wb-v17";
+const CACHE_NAME = "safety-wb-v18";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -25,6 +25,8 @@ const APP_SHELL = [
   "./ort/ort-wasm-simd-threaded.jsep.wasm",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./icon-192.png",
+  "./icon-512.png",
   "./yolo26n.onnx",
 ];
 
